@@ -1,5 +1,0 @@
-
-
-void appmain(void) {
-    
-}
