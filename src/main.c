@@ -5,7 +5,7 @@
 #define TAG "MAIN"
 #include <nvs_flash.h>
 
-#include "board.h"
+#include "component/board.h"
 #include "bluetooth/bluetooth.h"
 
 /* ---------- App entry ---------- */
@@ -39,5 +39,5 @@ void app_main(void)
         ESP_LOGE(TAG, "Mesh init failed: %d", err);
     }
 
-    board_led_operation(LED_G, LED_ON);
+
 }

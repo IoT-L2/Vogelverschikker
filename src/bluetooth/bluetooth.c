@@ -9,7 +9,6 @@
 #include <inttypes.h>
 
 #include "esp_log.h"
-#include "nvs_flash.h"
 
 #include "esp_bt.h"
 #include "esp_bt_main.h"
@@ -21,10 +20,9 @@
 #include "esp_ble_mesh_provisioning_api.h"
 #include "esp_ble_mesh_config_model_api.h"
 #include "esp_ble_mesh_generic_model_api.h"
-#include "esp_ble_mesh_health_model_api.h"
 #include "esp_gap_ble_api.h"
 
-#include "board.h"
+#include "../component/board.h"
 
 #define TAG "BLE_MESH"
 #define CID_ESP 0x02E5
@@ -123,6 +121,14 @@ static void gen_server_cb(esp_ble_mesh_generic_server_cb_event_t event,
 
             uint8_t onoff = param->value.state_change.onoff_set.onoff;
 
+            ESP_LOGI(TAG, "Received ONOFF: %d", onoff);
+
+            if (onoff) {
+                board_led_operation(LED_G, LED_ON);
+            } else {
+                board_led_operation(LED_G, LED_OFF);
+            }
+
             esp_ble_mesh_model_publish(param->model,
                                        ESP_BLE_MESH_MODEL_OP_GEN_ONOFF_STATUS,
                                        sizeof(onoff),
@@ -130,6 +136,7 @@ static void gen_server_cb(esp_ble_mesh_generic_server_cb_event_t event,
                                        ROLE_NODE);
         }
     }
+
 }
 
 /* ---------- Mesh init ---------- */

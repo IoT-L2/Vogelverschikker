@@ -11,7 +11,7 @@
 
 #include "driver/gpio.h"
 #include "esp_log.h"
-#include "board.h"
+#include "../component/board.h"
 
 
 #define TAG "BOARD"
