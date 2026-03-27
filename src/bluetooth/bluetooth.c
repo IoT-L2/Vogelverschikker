@@ -19,7 +19,7 @@
 #include "esp_ble_mesh_networking_api.h"
 #include "esp_ble_mesh_provisioning_api.h"
 #include "esp_ble_mesh_config_model_api.h"
-#include "esp_ble_mesh_generic_model_api.h"
+#include "esp_ble_mesh_health_model_api.h"
 #include "esp_gap_ble_api.h"
 
 #include "../component/board.h"
@@ -35,6 +35,23 @@ static esp_ble_mesh_prov_t provision = {
     .uuid = dev_uuid,
 };
 
+
+/* ---------- Health Server ---------- */
+static const uint8_t test_ids[] = { 0x00 };
+
+static const esp_ble_mesh_health_test_t health_test = {
+    .id_count = 1,
+    .test_ids = test_ids,
+    .company_id = CID_ESP,
+};
+
+static esp_ble_mesh_health_srv_t health_srv = {
+    .health_test = health_test,
+};
+
+ESP_BLE_MESH_HEALTH_PUB_DEFINE(health_pub, 1, 0);
+
+
 /* ---------- Config Server ---------- */
 static esp_ble_mesh_cfg_srv_t config_server = {
     .net_transmit = ESP_BLE_MESH_TRANSMIT(2, 20),
@@ -44,20 +61,10 @@ static esp_ble_mesh_cfg_srv_t config_server = {
     .default_ttl = 7,
 };
 
-/* ---------- OnOff Model ---------- */
-ESP_BLE_MESH_MODEL_PUB_DEFINE(onoff_pub, 2 + 3, ROLE_NODE);
-
-static esp_ble_mesh_gen_onoff_srv_t onoff_server = {
-    .rsp_ctrl = {
-        .get_auto_rsp = ESP_BLE_MESH_SERVER_AUTO_RSP,
-        .set_auto_rsp = ESP_BLE_MESH_SERVER_AUTO_RSP,
-    },
-};
-
 /* ---------- Composition ---------- */
-static esp_ble_mesh_model_t root_models[] = {
+static  esp_ble_mesh_model_t root_models[] = {
     ESP_BLE_MESH_MODEL_CFG_SRV(&config_server),
-    ESP_BLE_MESH_MODEL_GEN_ONOFF_SRV(&onoff_pub, &onoff_server),
+    ESP_BLE_MESH_MODEL_HEALTH_SRV(&health_srv, &health_pub),
 };
 
 static esp_ble_mesh_elem_t elements[] = {
@@ -96,8 +103,6 @@ esp_err_t bluetooth_init(void)
     if (ret) return ret;
 
     ret = esp_bluedroid_enable();
-    ESP_ERROR_CHECK(esp_ble_gap_set_device_name("Christian+Daniel"));
-    ESP_ERROR_CHECK(esp_ble_mesh_set_unprovisioned_device_name("Christian+Daniel"));
     return ret;
 }
 
@@ -111,49 +116,21 @@ static void prov_cb(esp_ble_mesh_prov_cb_event_t event,
     }
 }
 
-/* ---------- Generic server callback ---------- */
-static void gen_server_cb(esp_ble_mesh_generic_server_cb_event_t event,
-                          esp_ble_mesh_generic_server_cb_param_t *param)
-{
-    if (event == ESP_BLE_MESH_GENERIC_SERVER_STATE_CHANGE_EVT) {
-        if (param->ctx.recv_op == ESP_BLE_MESH_MODEL_OP_GEN_ONOFF_SET ||
-            param->ctx.recv_op == ESP_BLE_MESH_MODEL_OP_GEN_ONOFF_SET_UNACK) {
-
-            uint8_t onoff = param->value.state_change.onoff_set.onoff;
-
-            ESP_LOGI(TAG, "Received ONOFF: %d", onoff);
-
-            if (onoff) {
-                board_led_operation(LED_G, LED_ON);
-            } else {
-                board_led_operation(LED_G, LED_OFF);
-            }
-
-            esp_ble_mesh_model_publish(param->model,
-                                       ESP_BLE_MESH_MODEL_OP_GEN_ONOFF_STATUS,
-                                       sizeof(onoff),
-                                       &onoff,
-                                       ROLE_NODE);
-        }
-    }
-
-}
-
 /* ---------- Mesh init ---------- */
 esp_err_t ble_mesh_init(void)
 {
     esp_ble_mesh_register_prov_callback(prov_cb);
-    esp_ble_mesh_register_generic_server_callback(gen_server_cb);
 
+    ble_mesh_get_dev_uuid(dev_uuid);
     esp_err_t err = esp_ble_mesh_init(&provision, &composition);
-    if (err) return err;
+    if (err) {
+        ESP_LOGE(TAG, "Mesh init failed (err %d)", err);
+        return err;
+    }
 
     err = esp_ble_mesh_node_prov_enable(
-    (esp_ble_mesh_prov_bearer_t)(
         ESP_BLE_MESH_PROV_ADV | ESP_BLE_MESH_PROV_GATT
-    )
-);
+    );
 
     return err;
 }
-
