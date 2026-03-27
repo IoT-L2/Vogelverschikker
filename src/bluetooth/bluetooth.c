@@ -43,7 +43,8 @@ static const uint8_t app_key[16] = {
 };
 
 /* ---------- UUID ---------- */
-static uint8_t dev_uuid[16] = { 0xdd, 0xdd };
+uint8_t match[2] = { 0xcd, 0xcd };
+static uint8_t dev_uuid[16] = { 0xcd, 0xcd };
 
 /* ---------- Provisioning (provisioner role) ---------- */
 static esp_ble_mesh_prov_t provision = {
@@ -274,6 +275,16 @@ esp_err_t ble_mesh_init(void)
     );
     if (err) {
         ESP_LOGE(TAG, "Failed to enable provisioner (err %d)", err);
+        return err;
+    }
+    err = esp_ble_mesh_provisioner_set_dev_uuid_match(
+    match,          // the 2-byte prefix to match
+    sizeof(match),  // length (2)
+    0x00,           // offset: match starting at byte 0 of the UUID
+    false           // don't provision all devices that match (manual control)
+);
+    if (err) {
+        ESP_LOGE(TAG, "Failed to set UUID match (err %d)", err);
         return err;
     }
 
