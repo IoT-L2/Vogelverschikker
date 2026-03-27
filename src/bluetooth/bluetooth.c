@@ -20,6 +20,7 @@
 #include "esp_ble_mesh_provisioning_api.h"
 #include "esp_ble_mesh_config_model_api.h"
 #include "esp_ble_mesh_generic_model_api.h"
+#include "esp_ble_mesh_health_model_api.h"
 #include "esp_gap_ble_api.h"
 
 #include "../component/board.h"
@@ -34,6 +35,21 @@ static uint8_t dev_uuid[16] = { 0xdd, 0xdd };
 static esp_ble_mesh_prov_t provision = {
     .uuid = dev_uuid,
 };
+
+/* ---------- Health Server ---------- */
+static const uint8_t test_ids[] = { 0x00 };
+
+static const esp_ble_mesh_health_test_t health_test = {
+    .id_count = 1,
+    .test_ids = test_ids,
+    .company_id = CID_ESP,
+};
+
+static esp_ble_mesh_health_srv_t health_srv = {
+    .health_test = health_test,
+};
+
+ESP_BLE_MESH_HEALTH_PUB_DEFINE(health_pub, 1, 0);
 
 /* ---------- Config Server ---------- */
 static esp_ble_mesh_cfg_srv_t config_server = {
@@ -58,6 +74,7 @@ static esp_ble_mesh_gen_onoff_srv_t onoff_server = {
 static esp_ble_mesh_model_t root_models[] = {
     ESP_BLE_MESH_MODEL_CFG_SRV(&config_server),
     ESP_BLE_MESH_MODEL_GEN_ONOFF_SRV(&onoff_pub, &onoff_server),
+    ESP_BLE_MESH_MODEL_HEALTH_SRV(&health_srv, &health_pub),
 };
 
 static esp_ble_mesh_elem_t elements[] = {
@@ -70,7 +87,7 @@ static esp_ble_mesh_comp_t composition = {
     .elements = elements,
 };
 
-/* ---------- UUID helper ---------- */
+/* ---------- UUID helper (UNCHANGED as requested) ---------- */
 void ble_mesh_get_dev_uuid(uint8_t *dev_uuid_out)
 {
     if (!dev_uuid_out) return;
@@ -98,6 +115,7 @@ esp_err_t bluetooth_init(void)
     ret = esp_bluedroid_enable();
     ESP_ERROR_CHECK(esp_ble_gap_set_device_name("Christian+Daniel"));
     ESP_ERROR_CHECK(esp_ble_mesh_set_unprovisioned_device_name("Christian+Daniel"));
+
     return ret;
 }
 
@@ -136,7 +154,6 @@ static void gen_server_cb(esp_ble_mesh_generic_server_cb_event_t event,
                                        ROLE_NODE);
         }
     }
-
 }
 
 /* ---------- Mesh init ---------- */
@@ -145,15 +162,15 @@ esp_err_t ble_mesh_init(void)
     esp_ble_mesh_register_prov_callback(prov_cb);
     esp_ble_mesh_register_generic_server_callback(gen_server_cb);
 
+    /* ✅ Added from V2: fill UUID before init */
+    ble_mesh_get_dev_uuid(dev_uuid);
+
     esp_err_t err = esp_ble_mesh_init(&provision, &composition);
     if (err) return err;
 
     err = esp_ble_mesh_node_prov_enable(
-    (esp_ble_mesh_prov_bearer_t)(
         ESP_BLE_MESH_PROV_ADV | ESP_BLE_MESH_PROV_GATT
-    )
-);
+    );
 
     return err;
 }
-
