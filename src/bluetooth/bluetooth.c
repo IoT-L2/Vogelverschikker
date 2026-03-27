@@ -178,7 +178,21 @@ static void prov_cb(esp_ble_mesh_prov_cb_event_t event,
         add_dev.oob_info = param->provisioner_recv_unprov_adv_pkt.oob_info;
         add_dev.bearer   = ESP_BLE_MESH_PROV_ADV; /* or PROV_GATT */
 
-        ESP_LOGI(TAG, "Unprovisioned device found, adding…");
+        uint8_t *u = param->provisioner_recv_unprov_adv_pkt.dev_uuid;
+
+        ESP_LOGI(TAG,
+            "Unprovisioned device UUID: "
+            "%02x%02x%02x%02x-"
+            "%02x%02x-"
+            "%02x%02x-"
+            "%02x%02x-"
+            "%02x%02x%02x%02x%02x%02x",
+            u[0], u[1], u[2], u[3],
+            u[4], u[5],
+            u[6], u[7],
+            u[8], u[9],
+            u[10], u[11], u[12], u[13], u[14], u[15]
+        );
         esp_err_t err = esp_ble_mesh_provisioner_add_unprov_dev(
             &add_dev,
             ADD_DEV_RM_AFTER_PROV_FLAG | ADD_DEV_START_PROV_NOW_FLAG
