@@ -29,7 +29,7 @@
 #define CID_ESP 0x02E5
 
 /* ---------- UUID ---------- */
-static uint8_t dev_uuid[16] = { 0xdd, 0xdd };
+static uint8_t dev_uuid[16] = { 0xcd, 0xcd };
 
 /* ---------- Provisioning ---------- */
 static esp_ble_mesh_prov_t provision = {
@@ -162,7 +162,6 @@ esp_err_t ble_mesh_init(void)
     esp_ble_mesh_register_prov_callback(prov_cb);
     esp_ble_mesh_register_generic_server_callback(gen_server_cb);
 
-    /* ✅ Added from V2: fill UUID before init */
     ble_mesh_get_dev_uuid(dev_uuid);
 
     esp_err_t err = esp_ble_mesh_init(&provision, &composition);
