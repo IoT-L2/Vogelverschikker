@@ -8,9 +8,13 @@
 #include <esp_bt_device.h>
 #include <nvs_flash.h>
 
-#include "bluetooth/bt.h"
+
+#include "bluetooth/bt_mesh.h"
 #include "component/board.h"
-// #include "bluetooth/bluetooth.h"
+
+
+#define TAG             "MAIN"
+#define PROV_WAIT_MS    10000   /* how long to wait before becoming provisioner */
 
 
 /* ---------- App entry ---------- */
@@ -27,19 +31,16 @@ void app_main(void)
     }
     ESP_ERROR_CHECK(err);
 
+    ESP_ERROR_CHECK(bluetooth_init());
+    ESP_ERROR_CHECK(ble_mesh_init_node());
 
+    ESP_LOGI(TAG, "Waiting %d ms to be provisioned...", PROV_WAIT_MS);
+    vTaskDelay(pdMS_TO_TICKS(PROV_WAIT_MS));
 
-    err = bluetooth_init();
-    if (err) {
-        ESP_LOGE(TAG, "esp32_bluetooth_init failed (err %d)", err);
-        return;
-    }
-
-
-
-    /* Initialize the Bluetooth Mesh Subsystem */
-    err = ble_mesh_init(NODE);
-    if (err) {
-        ESP_LOGE(TAG, "Bluetooth mesh init failed (err %d)", err);
+    if (!ble_mesh_is_provisioned()) {
+        ESP_LOGI(TAG, "Not provisioned — becoming provisioner");
+        ESP_ERROR_CHECK(ble_mesh_upgrade_to_provisioner());
+    } else {
+        ESP_LOGI(TAG, "Provisioned — running as node");
     }
 }
