@@ -1,109 +1,34 @@
-#include "bluetooth.h"
+//
+// Created by Christian ten Brinke on 27/03/2026.
+//
+#include "bt_provisioner.h"
 
-#include <stdio.h>
-#include <string.h>
-#include <inttypes.h>
+#include <esp_ble_mesh_common_api.h>
+#include <esp_ble_mesh_config_model_api.h>
+#include <esp_ble_mesh_defs.h>
+#include <esp_ble_mesh_health_model_api.h>
+#include <esp_ble_mesh_networking_api.h>
 
+#include "bt.h"
 #include "esp_log.h"
 #include "esp_bt.h"
-#include "esp_bt_main.h"
-#include "esp_bt_device.h"
-
-#include "esp_ble_mesh_defs.h"
-#include "esp_ble_mesh_common_api.h"
-#include "esp_ble_mesh_networking_api.h"
 #include "esp_ble_mesh_provisioning_api.h"
-#include "esp_ble_mesh_config_model_api.h"
-#include "esp_ble_mesh_health_model_api.h"
-#include "esp_gap_ble_api.h"
 
-#include "../component/board.h"
+
+#include "component/board.h"
 
 #define TAG "BLE_MESH_PROV"
 #define CID_ESP         0x02E5
-
-/* -----------------------------------------------------------------------
- * Keys – hard-coded for simplicity; store in NVS for production firmware
- * --------------------------------------------------------------------- */
 #define PROV_NET_KEY_IDX    0x0000
 #define PROV_APP_KEY_IDX    0x0000
 #define PROV_FLAGS          0x00
 #define PROV_IV_INDEX       0x00
 
-// static const uint8_t net_key[16] = {
-//     0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
-//     0x00, 0x11, 0x22, 0x33, 0x44, 0x55,
-//     0x66, 0x77, 0x88, 0x99
-// };
 
-static const uint8_t app_key[16] = {
-    0x11, 0x22, 0x33, 0x44, 0x55, 0x66,
-    0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc,
-    0xdd, 0xee, 0xff, 0x00
-};
 
-/* ---------- UUID ---------- */
-uint8_t match[2] = { 0xcd, 0xcd };
-static uint8_t dev_uuid[16] = { 0xcd, 0xcd };
-
-/* ---------- Provisioning (provisioner role) ---------- */
-static esp_ble_mesh_prov_t provision = {
-    .uuid              = dev_uuid,
-    .prov_unicast_addr = 0x0001,   /* provisioner's own unicast address  */
-    .prov_start_address= 0x0005,   /* first unicast address given to nodes */
-    .prov_attention    = 0,
-    .prov_pub_key_oob  = 0,
-    .prov_static_oob_val = NULL,
-    .prov_static_oob_len = 0,
-    .flags             = PROV_FLAGS,
-    .iv_index          = PROV_IV_INDEX,
-};
-
-/* ---------- Config Client (needed to configure nodes after provisioning) -- */
+/* ---------- Config Client ---------- */
 static esp_ble_mesh_client_t config_client;
 
-/* ---------- Health Server (optional, keeps the element valid) ----------- */
-static const uint8_t test_ids[] = { 0x00 };
-static const esp_ble_mesh_health_test_t health_test = {
-    .id_count  = 1,
-    .test_ids  = test_ids,
-    .company_id = CID_ESP,
-};
-static esp_ble_mesh_health_srv_t health_srv = {
-    .health_test = health_test,
-};
-ESP_BLE_MESH_HEALTH_PUB_DEFINE(health_pub, 1, 0);
-
-/* ---------- Config Server (provisioner still needs one for itself) ------- */
-static esp_ble_mesh_cfg_srv_t config_server = {
-    .net_transmit      = ESP_BLE_MESH_TRANSMIT(2, 20),
-    .relay             = ESP_BLE_MESH_RELAY_DISABLED,
-    .relay_retransmit  = ESP_BLE_MESH_TRANSMIT(2, 20),
-    .beacon            = ESP_BLE_MESH_BEACON_ENABLED,
-    .default_ttl       = 7,
-};
-
-/* ---------- Composition -------------------------------------------------- */
-static esp_ble_mesh_model_t root_models[] = {
-    ESP_BLE_MESH_MODEL_CFG_SRV(&config_server),
-    ESP_BLE_MESH_MODEL_CFG_CLI(&config_client),   /* <-- provisioner needs this */
-    ESP_BLE_MESH_MODEL_HEALTH_SRV(&health_srv, &health_pub),
-};
-
-static esp_ble_mesh_elem_t elements[] = {
-    ESP_BLE_MESH_ELEMENT(0, root_models, ESP_BLE_MESH_MODEL_NONE),
-};
-
-static esp_ble_mesh_comp_t composition = {
-    .cid           = CID_ESP,
-    .element_count = 1,
-    .elements      = elements,
-};
-
-/* -----------------------------------------------------------------------
- * Config-client callback
- * Receives replies from nodes after we send config commands to them.
- * --------------------------------------------------------------------- */
 static void config_client_cb(esp_ble_mesh_cfg_client_cb_event_t event,
                               esp_ble_mesh_cfg_client_cb_param_t *param)
 {
@@ -118,15 +43,61 @@ static void config_client_cb(esp_ble_mesh_cfg_client_cb_event_t event,
                      param->params->ctx.addr);
             board_led_operation(LED_G, LED_ON);
         }
-    } else if (event == ESP_BLE_MESH_CFG_CLIENT_TIMEOUT_EVT) {
-        ESP_LOGW(TAG, "Config client timeout (opcode 0x%04" PRIx32 ")",
-                 param->params->opcode);
-    }
+        } else if (event == ESP_BLE_MESH_CFG_CLIENT_TIMEOUT_EVT) {
+            ESP_LOGW(TAG, "Config client timeout (opcode 0x%04" PRIx32 ")",
+                     param->params->opcode);
+        }
 }
 
-/* -----------------------------------------------------------------------
- * Helper: send AppKey Add to a freshly-provisioned node
- * --------------------------------------------------------------------- */
+/* ---------- Health Server ---------- */
+static const uint8_t test_ids[] = { 0x00 };
+
+static const esp_ble_mesh_health_test_t health_test = {
+    .id_count = 1,
+    .test_ids = test_ids,
+    .company_id = CID_ESP,
+};
+
+esp_ble_mesh_health_srv_t health_srv_p = {
+    .health_test = health_test,
+};
+
+ESP_BLE_MESH_HEALTH_PUB_DEFINE(health_pub, 1, 0);
+
+
+/* Composition */
+
+static esp_ble_mesh_model_t root_models[] = {
+    ESP_BLE_MESH_MODEL_CFG_SRV(&config_server),
+    ESP_BLE_MESH_MODEL_CFG_CLI(&config_client),
+    ESP_BLE_MESH_MODEL_HEALTH_SRV(&health_srv_p, &health_pub),
+};
+
+static esp_ble_mesh_elem_t elements[] = {
+    ESP_BLE_MESH_ELEMENT(0, root_models, ESP_BLE_MESH_MODEL_NONE),
+};
+
+static esp_ble_mesh_comp_t composition = {
+    .cid           = CID_ESP,
+    .element_count = 1,
+    .elements      = elements,
+};
+
+/* ------------ Keys ------------ */
+uint8_t match[2] = { 0xcd, 0xcd };
+
+// static const uint8_t net_key[16] = {
+//     0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
+//     0x00, 0x11, 0x22, 0x33, 0x44, 0x55,
+//     0x66, 0x77, 0x88, 0x99
+// };
+
+static const uint8_t app_key[16] = {
+    0x11, 0x22, 0x33, 0x44, 0x55, 0x66,
+    0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc,
+    0xdd, 0xee, 0xff, 0x00
+};
+
 static void prov_send_app_key(uint16_t unicast_addr)
 {
     esp_ble_mesh_client_common_param_t common = {
@@ -152,9 +123,24 @@ static void prov_send_app_key(uint16_t unicast_addr)
     }
 }
 
-/* -----------------------------------------------------------------------
- * Provisioning callback
- * --------------------------------------------------------------------- */
+
+/* ---------- Provisioning (provisioner role) ---------- */
+
+static uint8_t dev_uuid_prov[16];
+
+static esp_ble_mesh_prov_t provision = {
+    .uuid              = dev_uuid_prov,
+    .prov_unicast_addr = 0x0001,   /* provisioner's own unicast address  */
+    .prov_start_address= 0x0005,   /* first unicast address given to nodes */
+    .prov_attention    = 0,
+    .prov_pub_key_oob  = 0,
+    .prov_static_oob_val = NULL,
+    .prov_static_oob_len = 0,
+    .flags             = PROV_FLAGS,
+    .iv_index          = PROV_IV_INDEX,
+};
+
+
 static void prov_cb(esp_ble_mesh_prov_cb_event_t event,
                     esp_ble_mesh_prov_cb_param_t *param)
 {
@@ -230,40 +216,19 @@ static void prov_cb(esp_ble_mesh_prov_cb_event_t event,
     }
 }
 
-/* ---------- UUID helper -------------------------------------------------- */
-void ble_mesh_get_dev_uuid(uint8_t *dev_uuid_out)
-{
-    if (!dev_uuid_out) return;
-    memcpy(dev_uuid_out + 2, esp_bt_dev_get_address(), BD_ADDR_LEN);
-}
 
-/* ---------- Bluetooth init ----------------------------------------------- */
-esp_err_t bluetooth_init(void)
-{
-    ESP_ERROR_CHECK(esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT));
 
-    esp_bt_controller_config_t bt_cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
-    esp_err_t ret = esp_bt_controller_init(&bt_cfg);
-    if (ret) return ret;
 
-    ret = esp_bt_controller_enable(ESP_BT_MODE_BLE);
-    if (ret) return ret;
 
-    esp_bluedroid_config_t cfg = BT_BLUEDROID_INIT_CONFIG_DEFAULT();
-    ret = esp_bluedroid_init_with_cfg(&cfg);
-    if (ret) return ret;
+/* ---------- Init prov ---------- */
+esp_err_t init_prov(
+const uint8_t *dev_uuid
+) {
 
-    return esp_bluedroid_enable();
-}
+    memcpy(dev_uuid_prov, dev_uuid, 16);
 
-/* ---------- Mesh init ---------------------------------------------------- */
-esp_err_t ble_mesh_init(void)
-{
     esp_ble_mesh_register_prov_callback(prov_cb);
     esp_ble_mesh_register_config_client_callback(config_client_cb);
-
-    ble_mesh_get_dev_uuid(dev_uuid);
-
     esp_err_t err = esp_ble_mesh_init(&provision, &composition);
     if (err) {
         ESP_LOGE(TAG, "Mesh init failed (err %d)", err);
@@ -271,12 +236,13 @@ esp_err_t ble_mesh_init(void)
     }
 
     err = esp_ble_mesh_provisioner_prov_enable(
-        ESP_BLE_MESH_PROV_ADV | ESP_BLE_MESH_PROV_GATT
-    );
+       ESP_BLE_MESH_PROV_ADV | ESP_BLE_MESH_PROV_GATT
+   );
     if (err) {
         ESP_LOGE(TAG, "Failed to enable provisioner (err %d)", err);
         return err;
     }
+
     err = esp_ble_mesh_provisioner_set_dev_uuid_match(
     match,          // the 2-byte prefix to match
     sizeof(match),  // length (2)

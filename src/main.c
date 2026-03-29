@@ -8,8 +8,9 @@
 #include <esp_bt_device.h>
 #include <nvs_flash.h>
 
+#include "bluetooth/bt.h"
 #include "component/board.h"
-#include "bluetooth/bluetooth.h"
+// #include "bluetooth/bluetooth.h"
 
 
 /* ---------- App entry ---------- */
@@ -37,7 +38,7 @@ void app_main(void)
 
 
     /* Initialize the Bluetooth Mesh Subsystem */
-    err = ble_mesh_init();
+    err = ble_mesh_init(NODE);
     if (err) {
         ESP_LOGE(TAG, "Bluetooth mesh init failed (err %d)", err);
     }
