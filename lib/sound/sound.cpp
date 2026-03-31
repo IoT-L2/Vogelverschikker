@@ -143,3 +143,17 @@ void trigger_sound(void)
         xTaskNotifyGive(audio_task_handle);
     }
 }
+
+void trigger_sound_from_isr(void)
+{
+    if (audio_task_handle != NULL)
+    {
+        BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+        // Gebruik de speciale FromISR functie!
+        vTaskNotifyGiveFromISR(audio_task_handle, &xHigherPriorityTaskWoken);
+        if (xHigherPriorityTaskWoken)
+        {
+            portYIELD_FROM_ISR();
+        }
+    }
+}
