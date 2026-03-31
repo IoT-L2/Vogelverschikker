@@ -1,7 +1,7 @@
 {
     "version":            "1.2",
     "project_name":       "vogel",
-    "project_version":    "b0d4d86-dirty",
+    "project_version":    "a5ca8b6-dirty",
     "project_path":       "C:/Users/danie/OneDrive/Documenten/GitHub/Vogelverschikker",
     "idf_path":           "C:/Users/danie/.platformio/packages/framework-espidf",
     "build_dir":          "C:/Users/danie/OneDrive/Documenten/GitHub/Vogelverschikker/.pio/build/esp32-s3-devkitc-1",
@@ -1480,7 +1480,7 @@
             "managed_reqs": [],
             "managed_priv_reqs": [],
             "file": "C:/Users/danie/OneDrive/Documenten/GitHub/Vogelverschikker/.pio/build/esp32-s3-devkitc-1/esp-idf/src/libsrc.a",
-            "sources": [ "C:/Users/danie/OneDrive/Documenten/GitHub/Vogelverschikker/src/CMakeLists.txt", "C:/Users/danie/OneDrive/Documenten/GitHub/Vogelverschikker/src/bluetooth/bt_mesh.c", "C:/Users/danie/OneDrive/Documenten/GitHub/Vogelverschikker/src/bluetooth/bt_mesh.h", "C:/Users/danie/OneDrive/Documenten/GitHub/Vogelverschikker/src/component/board.c", "C:/Users/danie/OneDrive/Documenten/GitHub/Vogelverschikker/src/component/board.h", "C:/Users/danie/OneDrive/Documenten/GitHub/Vogelverschikker/src/main.c" ],
+            "sources": [ "C:/Users/danie/OneDrive/Documenten/GitHub/Vogelverschikker/src/CMakeLists.txt", "C:/Users/danie/OneDrive/Documenten/GitHub/Vogelverschikker/src/bluetooth/bt_mesh.c", "C:/Users/danie/OneDrive/Documenten/GitHub/Vogelverschikker/src/bluetooth/bt_mesh.h", "C:/Users/danie/OneDrive/Documenten/GitHub/Vogelverschikker/src/component/board.c", "C:/Users/danie/OneDrive/Documenten/GitHub/Vogelverschikker/src/component/board.h", "C:/Users/danie/OneDrive/Documenten/GitHub/Vogelverschikker/src/main.cpp" ],
             "include_dirs": []
         },
         "tcp_transport": {

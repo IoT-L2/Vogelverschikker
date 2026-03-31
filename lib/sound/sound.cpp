@@ -1,25 +1,24 @@
-#include "sound.h"
+#include "sound.h" // pio run -t uploadfs upload het wav bestand naar internal memory important!
 #include <stdio.h>
-#include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/i2c.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "rom/ets_sys.h"
-#include "esp_spiffs.h"
+#include "esp_spiffs.h" // Aangepast naar de juiste header!
 
-static const char *TAG = "AUDIO_MCP4725";
+static const char *TAG = "AUDIO";
 
-// Pas deze pinnen aan naar hoe jij de MCP4725 hebt aangesloten op je S3
-#define I2C_MASTER_SDA_IO 8
-#define I2C_MASTER_SCL_IO 9
+// Jouw I2C pinnen
+#define I2C_MASTER_SDA_IO 4
+#define I2C_MASTER_SCL_IO 5
 #define I2C_MASTER_NUM I2C_NUM_0
-#define I2C_MASTER_FREQ_HZ 400000 // 400kHz Fast Mode
-#define MCP4725_ADDR 0x62
+#define I2C_MASTER_FREQ_HZ 400000
+#define MCP4725_ADDR 0x60 // Verander dit naar 0x60 als je niks hoort!
 
 #define SAMPLE_RATE 8000
-#define SAMPLE_PERIOD_US (1000000 / SAMPLE_RATE) // 125 microseconden per sample
+#define SAMPLE_PERIOD_US (1000000 / SAMPLE_RATE)
 #define WAV_HEADER_SIZE 44
 #define AUDIO_BUFFER_SIZE 512
 
@@ -77,7 +76,6 @@ static void play_wav(const char *filename)
         return;
     }
 
-    // Sla de 44-byte WAV header over
     fseek(f, WAV_HEADER_SIZE, SEEK_SET);
 
     uint8_t buffer[AUDIO_BUFFER_SIZE];
@@ -90,12 +88,10 @@ static void play_wav(const char *filename)
     {
         for (size_t i = 0; i < bytes_read; i++)
         {
-            // Converteer 8-bit data naar 12-bit data voor de DAC
             uint16_t sample_12bit = buffer[i] << 4;
 
             mcp4725_set_voltage(sample_12bit);
 
-            // Wacht exact lang genoeg voor 8000 Hz timing
             next_sample_time += SAMPLE_PERIOD_US;
             int64_t wait_time = next_sample_time - esp_timer_get_time();
             if (wait_time > 0)
@@ -106,18 +102,17 @@ static void play_wav(const char *filename)
     }
 
     fclose(f);
-    mcp4725_set_voltage(0); // Trek de speaker naar de nul-lijn om ruis te voorkomen
+    mcp4725_set_voltage(0);
     ESP_LOGI(TAG, "Klaar met afspelen.");
 }
 
-// Achtergrondtaak die wacht op een seintje
 static void audio_task(void *pvParameters)
 {
     while (1)
     {
-        // Taak slaapt totdat de interrupt hem wakker maakt (0% CPU gebruik)
+        // Taak slaapt totdat hij normaal wordt aangeroepen
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-        play_wav("bird.wav");
+        play_wav("sound.wav");
     }
 }
 
@@ -127,20 +122,15 @@ void init_sound(void)
     init_spiffs();
     init_i2c();
 
-    // BELANGRIJK: We binden de audiotaak aan Core 1.
-    // BLE Mesh draait standaard op Core 0, dus ze storen elkaar niet.
-    xTaskCreatePinnedToCore(audio_task, "audio_task", 4096, NULL, configMAX_PRIORITIES - 1, &audio_task_handle, 1);
+    // Normale task creatie, NIET meer gepind aan Core 1!
+    xTaskCreate(audio_task, "audio_task", 4096, NULL, 5, &audio_task_handle);
 }
 
-void trigger_sound_from_isr(void)
+void trigger_sound(void)
 {
     if (audio_task_handle != NULL)
     {
-        BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-        vTaskNotifyGiveFromISR(audio_task_handle, &xHigherPriorityTaskWoken);
-        if (xHigherPriorityTaskWoken == pdTRUE)
-        {
-            portYIELD_FROM_ISR();
-        }
+        // Simpel signaal naar de taak (geen interrupt versie meer)
+        xTaskNotifyGive(audio_task_handle);
     }
 }

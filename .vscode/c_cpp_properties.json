@@ -10,6 +10,7 @@
             "includePath": [
                 "C:/Users/danie/OneDrive/Documenten/GitHub/Vogelverschikker/include",
                 "C:/Users/danie/OneDrive/Documenten/GitHub/Vogelverschikker/src",
+                "C:/Users/danie/OneDrive/Documenten/GitHub/Vogelverschikker/lib/sound",
                 "C:/Users/danie/.platformio/packages/framework-espidf/components/xtensa/esp32s3/include",
                 "C:/Users/danie/.platformio/packages/framework-espidf/components/xtensa/include",
                 "C:/Users/danie/.platformio/packages/framework-espidf/components/xtensa/deprecated_include",
@@ -209,7 +210,6 @@
                 "C:/Users/danie/.platformio/packages/framework-espidf/components/touch_element/include",
                 "C:/Users/danie/.platformio/packages/framework-espidf/components/usb/include",
                 "C:/Users/danie/.platformio/packages/framework-espidf/components/wifi_provisioning/include",
-                "C:/Users/danie/OneDrive/Documenten/GitHub/Vogelverschikker/lib/sound",
                 ""
             ],
             "browse": {
@@ -217,6 +217,7 @@
                 "path": [
                     "C:/Users/danie/OneDrive/Documenten/GitHub/Vogelverschikker/include",
                     "C:/Users/danie/OneDrive/Documenten/GitHub/Vogelverschikker/src",
+                    "C:/Users/danie/OneDrive/Documenten/GitHub/Vogelverschikker/lib/sound",
                     "C:/Users/danie/.platformio/packages/framework-espidf/components/xtensa/esp32s3/include",
                     "C:/Users/danie/.platformio/packages/framework-espidf/components/xtensa/include",
                     "C:/Users/danie/.platformio/packages/framework-espidf/components/xtensa/deprecated_include",
@@ -416,7 +417,6 @@
                     "C:/Users/danie/.platformio/packages/framework-espidf/components/touch_element/include",
                     "C:/Users/danie/.platformio/packages/framework-espidf/components/usb/include",
                     "C:/Users/danie/.platformio/packages/framework-espidf/components/wifi_provisioning/include",
-                    "C:/Users/danie/OneDrive/Documenten/GitHub/Vogelverschikker/lib/sound",
                     ""
                 ]
             },

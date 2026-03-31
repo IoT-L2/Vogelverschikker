@@ -5,11 +5,11 @@ extern "C"
 {
 #endif
 
-    // Initialiseert de I2C, het bestandssysteem en start de taak op Core 1
+    // Initialiseert SPIFFS, I2C en start de audiotaak
     void init_sound(void);
 
-    // Roep deze functie aan in je interrupt (ISR) om het geluid te starten
-    void trigger_sound_from_isr(void);
+    // Simpele functie om het geluid te starten (geen interrupt nodig!)
+    void trigger_sound(void);
 
 #ifdef __cplusplus
 }
