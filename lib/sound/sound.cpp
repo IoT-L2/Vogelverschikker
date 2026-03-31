@@ -14,7 +14,7 @@ static const char *TAG = "AUDIO";
 #define I2C_MASTER_SDA_IO 4
 #define I2C_MASTER_SCL_IO 5
 #define I2C_MASTER_NUM I2C_NUM_0
-#define I2C_MASTER_FREQ_HZ 400000
+#define I2C_MASTER_FREQ_HZ 800000
 #define MCP4725_ADDR 0x60 // Verander dit naar 0x60 als je niks hoort!
 
 #define SAMPLE_RATE 8000
@@ -80,7 +80,6 @@ static void play_wav(const char *filename)
 
     uint8_t buffer[AUDIO_BUFFER_SIZE];
     size_t bytes_read;
-    int64_t next_sample_time = esp_timer_get_time();
 
     ESP_LOGI(TAG, "Geluid aan het afspelen via MCP4725...");
 
@@ -88,12 +87,16 @@ static void play_wav(const char *filename)
     {
         for (size_t i = 0; i < bytes_read; i++)
         {
-            uint16_t sample_12bit = buffer[i] << 4;
+            int64_t start_time = esp_timer_get_time(); // Tijd NU
 
+            uint16_t sample_12bit = buffer[i] << 4;
             mcp4725_set_voltage(sample_12bit);
 
-            next_sample_time += SAMPLE_PERIOD_US;
-            int64_t wait_time = next_sample_time - esp_timer_get_time();
+            // Hoeveel tijd is er verstreken tijdens het sturen naar I2C?
+            int64_t elapsed = esp_timer_get_time() - start_time;
+
+            // Wacht alleen de tijd die nog OVER is van onze 125 microseconden
+            int64_t wait_time = SAMPLE_PERIOD_US - elapsed;
             if (wait_time > 0)
             {
                 esp_rom_delay_us(wait_time);
