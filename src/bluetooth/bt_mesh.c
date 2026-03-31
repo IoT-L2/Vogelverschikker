@@ -257,64 +257,21 @@ static void node_prov_cb(esp_ble_mesh_prov_cb_event_t event,
 }
 
 /* -------- Vendor model receive callback -------- */
-#define MAX_MESH_NODES 10
-
-typedef struct {
-    uint16_t src;
-    int32_t  last_val;
-    bool     valid;
-} dedup_entry_t;
-
-static dedup_entry_t s_dedup[MAX_MESH_NODES];
-
-static bool dedup_check_and_update(uint16_t src, int32_t val)
-{
-    int free_slot = -1;
-    for (int i = 0; i < MAX_MESH_NODES; i++) {
-        if (s_dedup[i].valid && s_dedup[i].src == src) {
-            if (s_dedup[i].last_val == val) return true;
-            s_dedup[i].last_val = val;
-            return false;
-        }
-        if (!s_dedup[i].valid && free_slot == -1) free_slot = i;
-    }
-    if (free_slot != -1) {
-        s_dedup[free_slot].src      = src;
-        s_dedup[free_slot].last_val = val;
-        s_dedup[free_slot].valid    = true;
-    }
-    return false;
-}
-
 static void vendor_model_cb(esp_ble_mesh_model_cb_event_t event,
                             esp_ble_mesh_model_cb_param_t *param)
 {
     if (event != ESP_BLE_MESH_MODEL_OPERATION_EVT) return;
     if (param->model_operation.opcode != OP_BROADCAST_SET) return;
-
     if (s_own_unicast_addr != 0 &&
         param->model_operation.ctx->addr == s_own_unicast_addr) return;
-
-    if (param->model_operation.length < sizeof(int32_t)) {
-        ESP_LOGW(TAG, "[vendor] rx too short (%d bytes)",
-                 param->model_operation.length);
-        return;
-    }
+    if (param->model_operation.length < sizeof(int32_t)) return;
 
     int32_t value;
     memcpy(&value, param->model_operation.msg, sizeof(value));
-    uint16_t src = param->model_operation.ctx->addr;
-
-    if (dedup_check_and_update(src, value)) return;
 
     ESP_LOGI(TAG, "[vendor] broadcast received: %" PRId32
-             " (from 0x%04x)", value, src);
+             " (from 0x%04x)", value, param->model_operation.ctx->addr);
 
-    /* Signal node-ready on first received message. By this point the
-       provisioner has completed the full config chain (AppKey + AppBind +
-       PubSet + SubAdd + RelaySet), so the node is fully operational.
-       Using the first RX as the signal is more reliable than the config
-       server callback, which doesn't consistently fire for all opcodes.   */
     static bool s_node_ready_signalled = false;
     if (!s_node_ready_signalled) {
         s_node_ready_signalled = true;
