@@ -1,30 +1,33 @@
 #include <esp_err.h>
 #include <esp_log.h>
 #include <nvs.h>
+#include <nvs_flash.h>
 #include <esp_random.h>
-
-#define TAG "MAIN"
 #include <esp_ble_mesh_defs.h>
 #include <esp_bt_device.h>
-#include <nvs_flash.h>
-
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 
 #include "bluetooth/bt_mesh.h"
 #include "component/board.h"
 
+#define TAG          "MAIN"
+#define PROV_WAIT_MS 10000
 
-#define TAG             "MAIN"
-#define PROV_WAIT_MS    10000   /* how long to wait before becoming provisioner */
+static SemaphoreHandle_t s_node_ready;
 
+void ble_mesh_on_node_configured(void)
+{
+    BaseType_t woken = pdFALSE;
+    xSemaphoreGiveFromISR(s_node_ready, &woken);
+    portYIELD_FROM_ISR(woken);
+}
 
-/* ---------- App entry ---------- */
 void app_main(void)
 {
-    esp_err_t err;
+    s_node_ready = xSemaphoreCreateBinary();
 
-    ESP_LOGI(TAG, "Initializing...");
-
-    err = nvs_flash_init();
+    esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES) {
         ESP_ERROR_CHECK(nvs_flash_erase());
         err = nvs_flash_init();
@@ -35,12 +38,27 @@ void app_main(void)
     ESP_ERROR_CHECK(ble_mesh_init_node());
 
     ESP_LOGI(TAG, "Waiting %d ms to be provisioned...", PROV_WAIT_MS);
-    vTaskDelay(pdMS_TO_TICKS(PROV_WAIT_MS));
+    vTaskDelay(pdMS_TO_TICKS(PROV_WAIT_MS));  /* ← this was missing */
 
     if (!ble_mesh_is_provisioned()) {
-        ESP_LOGI(TAG, "Not provisioned — becoming provisioner");
+        /* Nobody provisioned us → become the provisioner */
+        ESP_LOGI(TAG, "Not provisioned - becoming provisioner");
         ESP_ERROR_CHECK(ble_mesh_upgrade_to_provisioner());
+
+        int32_t counter = 0;
+        while (1) {
+            vTaskDelay(pdMS_TO_TICKS(5000));
+            ble_mesh_broadcast_int(counter++);
+        }
     } else {
-        ESP_LOGI(TAG, "Provisioned — running as node");
+        /* We were provisioned → wait until provisioner finishes config */
+        ESP_LOGI(TAG, "Provisioned - waiting for full config from provisioner...");
+        xSemaphoreTake(s_node_ready, portMAX_DELAY);
+        ESP_LOGI(TAG, "Node fully configured - starting broadcast loop");
+
+        while (1) {
+            ble_mesh_broadcast_int(42);
+            vTaskDelay(pdMS_TO_TICKS(5000));
+        }
     }
 }
