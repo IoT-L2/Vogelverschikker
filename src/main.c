@@ -11,6 +11,7 @@
 #include "bluetooth/bt_mesh.h"
 #include "component/board.h"
 
+
 #define TAG          "MAIN"
 #define PROV_WAIT_MS 10000
 
@@ -18,9 +19,7 @@ static SemaphoreHandle_t s_node_ready;
 
 void ble_mesh_on_node_configured(void)
 {
-    BaseType_t woken = pdFALSE;
-    xSemaphoreGiveFromISR(s_node_ready, &woken);
-    portYIELD_FROM_ISR(woken);
+    xSemaphoreGive(s_node_ready);
 }
 
 void app_main(void)
@@ -28,7 +27,7 @@ void app_main(void)
     s_node_ready = xSemaphoreCreateBinary();
 
     esp_err_t err = nvs_flash_init();
-    if (err == ESP_ERR_NVS_NO_FREE_PAGES) {
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
         err = nvs_flash_init();
     }
@@ -38,10 +37,9 @@ void app_main(void)
     ESP_ERROR_CHECK(ble_mesh_init_node());
 
     ESP_LOGI(TAG, "Waiting %d ms to be provisioned...", PROV_WAIT_MS);
-    vTaskDelay(pdMS_TO_TICKS(PROV_WAIT_MS));  /* ← this was missing */
+    vTaskDelay(pdMS_TO_TICKS(PROV_WAIT_MS));
 
     if (!ble_mesh_is_provisioned()) {
-        /* Nobody provisioned us → become the provisioner */
         ESP_LOGI(TAG, "Not provisioned - becoming provisioner");
         ESP_ERROR_CHECK(ble_mesh_upgrade_to_provisioner());
 
@@ -51,7 +49,6 @@ void app_main(void)
             ble_mesh_broadcast_int(counter++);
         }
     } else {
-        /* We were provisioned → wait until provisioner finishes config */
         ESP_LOGI(TAG, "Provisioned - waiting for full config from provisioner...");
         xSemaphoreTake(s_node_ready, portMAX_DELAY);
         ESP_LOGI(TAG, "Node fully configured - starting broadcast loop");

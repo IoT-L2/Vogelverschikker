@@ -1,3 +1,7 @@
+//
+// bt_mesh.c - BLE Mesh: node init + provisioner upgrade + vendor broadcast model
+//
+
 #include "bt_mesh.h"
 
 #include <string.h>
@@ -27,13 +31,9 @@
 #define VENDOR_MODEL_ID         0x0001
 #define OP_BROADCAST_SET        ESP_BLE_MESH_MODEL_OP_3(0x00, CID_ESP)
 
-/* Group address used for all-node broadcasts.
- * 0xC000 is a user-assigned group; you can pick any value in 0xC000–0xFEFF.
- * Every node that should receive the broadcast must be subscribed to this
- * address (done by the provisioner via Config Model Subscription Add). */
 #define BROADCAST_GROUP_ADDR    0xC000
 
-
+/* -------- Provisioning state machine -------- */
 typedef enum {
     PROV_STEP_APP_KEY_ADD = 0,
     PROV_STEP_APP_KEY_BIND,
@@ -46,7 +46,7 @@ typedef enum {
 static uint16_t s_target_unicast = 0;
 static prov_step_t s_prov_step   = PROV_STEP_APP_KEY_ADD;
 
-/* -------- Keys hardcoded  -------- */
+/* -------- Keys hardcoded -------- */
 static const uint8_t NET_KEY[16] = {
     0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
     0x00, 0x11, 0x22, 0x33, 0x44, 0x55,
@@ -59,7 +59,7 @@ static const uint8_t APP_KEY[16] = {
     0xdd, 0xee, 0xff, 0x00
 };
 
-/* -------- UUID  -------- */
+/* -------- UUID -------- */
 static const uint8_t UUID_PREFIX[2] = { 0xcd, 0xcd };
 static uint8_t dev_uuid[16];
 static uint16_t s_own_unicast_addr = 0;
@@ -79,7 +79,7 @@ static esp_ble_mesh_model_op_t vendor_ops[] = {
 
 ESP_BLE_MESH_MODEL_PUB_DEFINE(vendor_pub, 7, ROLE_NODE);
 
-/* -------- Models  -------- */
+/* -------- Models -------- */
 static esp_ble_mesh_cfg_srv_t config_server = {
     .net_transmit     = ESP_BLE_MESH_TRANSMIT(2, 20),
     .relay            = ESP_BLE_MESH_RELAY_ENABLED,
@@ -130,9 +130,9 @@ static esp_ble_mesh_prov_t prov = {
     .iv_index           = PROV_IV_INDEX,
 };
 
-/* -------- Helpers: common param builder -------- */
+/* -------- Helpers -------- */
 static void fill_common(esp_ble_mesh_client_common_param_t *c, uint32_t opcode,
-                         uint16_t addr)
+                        uint16_t addr)
 {
     memset(c, 0, sizeof(*c));
     c->opcode       = opcode;
@@ -145,10 +145,9 @@ static void fill_common(esp_ble_mesh_client_common_param_t *c, uint32_t opcode,
     c->msg_role     = ROLE_PROVISIONER;
 }
 
-/* -------- Provisioning sequence -------- */
+/* -------- Provisioning config chain -------- */
 static void prov_send_app_key(uint16_t addr)
 {
-
     ESP_LOGI(TAG, "[prov] >>> sending AppKey Add to 0x%04x", addr);
     esp_ble_mesh_client_common_param_t common;
     fill_common(&common, ESP_BLE_MESH_MODEL_OP_APP_KEY_ADD, addr);
@@ -164,17 +163,16 @@ static void prov_send_app_key(uint16_t addr)
     if (err) ESP_LOGE(TAG, "[prov] AppKey Add failed (err %d)", err);
 }
 
-
 static void prov_send_app_key_bind(uint16_t addr)
 {
     esp_ble_mesh_client_common_param_t common;
     fill_common(&common, ESP_BLE_MESH_MODEL_OP_MODEL_APP_BIND, addr);
 
     esp_ble_mesh_cfg_model_app_bind_t msg = {
-        .element_addr = addr,
+        .element_addr  = addr,
         .model_app_idx = APP_KEY_IDX,
-        .model_id     = VENDOR_MODEL_ID,
-        .company_id   = CID_ESP,
+        .model_id      = VENDOR_MODEL_ID,
+        .company_id    = CID_ESP,
     };
 
     esp_err_t err = esp_ble_mesh_config_client_set_state(
@@ -188,22 +186,21 @@ static void prov_send_pub_set(uint16_t addr)
     fill_common(&common, ESP_BLE_MESH_MODEL_OP_MODEL_PUB_SET, addr);
 
     esp_ble_mesh_cfg_model_pub_set_t msg = {
-        .element_addr      = addr,
-        .publish_addr      = BROADCAST_GROUP_ADDR,
-        .publish_app_idx   = APP_KEY_IDX,
-        .cred_flag         = false,
-        .publish_ttl       = 7,
-        .publish_period    = 0,     /* no periodic publish; we publish on demand */
+        .element_addr       = addr,
+        .publish_addr       = BROADCAST_GROUP_ADDR,
+        .publish_app_idx    = APP_KEY_IDX,
+        .cred_flag          = false,
+        .publish_ttl        = 7,
+        .publish_period     = 0,
         .publish_retransmit = ESP_BLE_MESH_TRANSMIT(2, 20),
-        .model_id          = VENDOR_MODEL_ID,
-        .company_id        = CID_ESP,
+        .model_id           = VENDOR_MODEL_ID,
+        .company_id         = CID_ESP,
     };
 
     esp_err_t err = esp_ble_mesh_config_client_set_state(
         &common, (esp_ble_mesh_cfg_client_set_state_t *)&msg);
     if (err) ESP_LOGE(TAG, "[prov] Pub Set failed (err %d)", err);
 }
-
 
 static void prov_send_sub_add(uint16_t addr)
 {
@@ -228,7 +225,7 @@ static void prov_send_relay_set(uint16_t addr)
     fill_common(&common, ESP_BLE_MESH_MODEL_OP_RELAY_SET, addr);
 
     esp_ble_mesh_cfg_relay_set_t msg = {
-        .relay          = ESP_BLE_MESH_RELAY_ENABLED,
+        .relay            = ESP_BLE_MESH_RELAY_ENABLED,
         .relay_retransmit = ESP_BLE_MESH_TRANSMIT(2, 20),
     };
 
@@ -237,7 +234,7 @@ static void prov_send_relay_set(uint16_t addr)
     if (err) ESP_LOGE(TAG, "[prov] Relay Set failed (err %d)", err);
 }
 
-/* -------- Node Callbacks  -------- */
+/* -------- Node callbacks -------- */
 static void node_prov_cb(esp_ble_mesh_prov_cb_event_t event,
                          esp_ble_mesh_prov_cb_param_t *param)
 {
@@ -248,7 +245,7 @@ static void node_prov_cb(esp_ble_mesh_prov_cb_event_t event,
         break;
 
     case ESP_BLE_MESH_NODE_PROV_COMPLETE_EVT:
-        s_own_unicast_addr = param->node_prov_complete.addr;  // add this
+        s_own_unicast_addr = param->node_prov_complete.addr;
         ESP_LOGI(TAG, "[node] provisioned - unicast 0x%04x",
                  param->node_prov_complete.addr);
         board_led_operation(LED_G, LED_OFF);
@@ -260,8 +257,34 @@ static void node_prov_cb(esp_ble_mesh_prov_cb_event_t event,
 }
 
 /* -------- Vendor model receive callback -------- */
-static uint16_t s_last_src = 0;
-static int32_t  s_last_val = 0;
+#define MAX_MESH_NODES 10
+
+typedef struct {
+    uint16_t src;
+    int32_t  last_val;
+    bool     valid;
+} dedup_entry_t;
+
+static dedup_entry_t s_dedup[MAX_MESH_NODES];
+
+static bool dedup_check_and_update(uint16_t src, int32_t val)
+{
+    int free_slot = -1;
+    for (int i = 0; i < MAX_MESH_NODES; i++) {
+        if (s_dedup[i].valid && s_dedup[i].src == src) {
+            if (s_dedup[i].last_val == val) return true;
+            s_dedup[i].last_val = val;
+            return false;
+        }
+        if (!s_dedup[i].valid && free_slot == -1) free_slot = i;
+    }
+    if (free_slot != -1) {
+        s_dedup[free_slot].src      = src;
+        s_dedup[free_slot].last_val = val;
+        s_dedup[free_slot].valid    = true;
+    }
+    return false;
+}
 
 static void vendor_model_cb(esp_ble_mesh_model_cb_event_t event,
                             esp_ble_mesh_model_cb_param_t *param)
@@ -269,7 +292,6 @@ static void vendor_model_cb(esp_ble_mesh_model_cb_event_t event,
     if (event != ESP_BLE_MESH_MODEL_OPERATION_EVT) return;
     if (param->model_operation.opcode != OP_BROADCAST_SET) return;
 
-    /* Ignore our own loopback messages */
     if (s_own_unicast_addr != 0 &&
         param->model_operation.ctx->addr == s_own_unicast_addr) return;
 
@@ -283,17 +305,26 @@ static void vendor_model_cb(esp_ble_mesh_model_cb_event_t event,
     memcpy(&value, param->model_operation.msg, sizeof(value));
     uint16_t src = param->model_operation.ctx->addr;
 
-    /* Deduplicate retransmissions */
-    if (src == s_last_src && value == s_last_val) return;
-    s_last_src = src;
-    s_last_val = value;
+    if (dedup_check_and_update(src, value)) return;
 
     ESP_LOGI(TAG, "[vendor] broadcast received: %" PRId32
              " (from 0x%04x)", value, src);
+
+    /* Signal node-ready on first received message. By this point the
+       provisioner has completed the full config chain (AppKey + AppBind +
+       PubSet + SubAdd + RelaySet), so the node is fully operational.
+       Using the first RX as the signal is more reliable than the config
+       server callback, which doesn't consistently fire for all opcodes.   */
+    static bool s_node_ready_signalled = false;
+    if (!s_node_ready_signalled) {
+        s_node_ready_signalled = true;
+        ble_mesh_on_node_configured();
+    }
+
+    /* ---- application logic here ---- */
 }
 
-
-/* -------- Provisioner Callbacks  -------- */
+/* -------- Provisioner callbacks -------- */
 static void provisioner_prov_cb(esp_ble_mesh_prov_cb_event_t event,
                                 esp_ble_mesh_prov_cb_param_t *param)
 {
@@ -349,7 +380,7 @@ static void provisioner_prov_cb(esp_ble_mesh_prov_cb_event_t event,
 }
 
 static void config_client_cb(esp_ble_mesh_cfg_client_cb_event_t event,
-                              esp_ble_mesh_cfg_client_cb_param_t *param)
+                             esp_ble_mesh_cfg_client_cb_param_t *param)
 {
     ESP_LOGI(TAG, "[prov] config client event %d opcode 0x%04" PRIx32,
              event, param->params->opcode);
@@ -380,19 +411,17 @@ static void config_client_cb(esp_ble_mesh_cfg_client_cb_event_t event,
             break;
 
         case ESP_BLE_MESH_MODEL_OP_MODEL_SUB_ADD:
-                ESP_LOGI(TAG, "[prov] Subscription added on 0x%04x -> enabling relay",
-                         param->params->ctx.addr);
-                s_prov_step = PROV_STEP_RELAY_SET;
-                prov_send_relay_set(s_target_unicast);
-                break;
+            ESP_LOGI(TAG, "[prov] Subscription added on 0x%04x -> enabling relay",
+                     param->params->ctx.addr);
+            s_prov_step = PROV_STEP_RELAY_SET;
+            prov_send_relay_set(s_target_unicast);
+            break;
 
         case ESP_BLE_MESH_MODEL_OP_RELAY_SET:
-                ESP_LOGI(TAG, "[prov] Relay enabled on 0x%04x - node fully configured",
-                         param->params->ctx.addr);
-                s_prov_step = PROV_STEP_DONE;
-                break;
-
-
+            ESP_LOGI(TAG, "[prov] Relay enabled on 0x%04x - node fully configured",
+                     param->params->ctx.addr);
+            s_prov_step = PROV_STEP_DONE;
+            break;
 
         default:
             break;
@@ -407,7 +436,7 @@ static void config_client_cb(esp_ble_mesh_cfg_client_cb_event_t event,
         case PROV_STEP_APP_KEY_BIND: prov_send_app_key_bind(s_target_unicast); break;
         case PROV_STEP_PUB_SET:      prov_send_pub_set(s_target_unicast);      break;
         case PROV_STEP_SUB_ADD:      prov_send_sub_add(s_target_unicast);      break;
-        case PROV_STEP_RELAY_SET: prov_send_relay_set(s_target_unicast); break;
+        case PROV_STEP_RELAY_SET:    prov_send_relay_set(s_target_unicast);    break;
         default: break;
         }
         break;
@@ -417,22 +446,7 @@ static void config_client_cb(esp_ble_mesh_cfg_client_cb_event_t event,
     }
 }
 
-static void config_server_cb(esp_ble_mesh_cfg_server_cb_event_t event,
-                             esp_ble_mesh_cfg_server_cb_param_t *param)
-{
-    if (event != ESP_BLE_MESH_CFG_SERVER_STATE_CHANGE_EVT) return;
-
-    switch (param->ctx.recv_op) {
-        case ESP_BLE_MESH_MODEL_OP_MODEL_SUB_ADD:
-            ESP_LOGI(TAG, "[node] subscription configured - node fully ready");
-            ble_mesh_on_node_configured();
-            break;
-        default:
-            break;
-    }
-}
-
-/* -------- Init  -------- */
+/* -------- Public API -------- */
 esp_err_t bluetooth_init(void)
 {
     ESP_ERROR_CHECK(esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT));
@@ -457,7 +471,7 @@ esp_err_t ble_mesh_init_node(void)
 
     esp_ble_mesh_register_prov_callback(node_prov_cb);
     esp_ble_mesh_register_custom_model_callback(vendor_model_cb);
-    esp_ble_mesh_register_config_server_callback(config_server_cb);
+    /* Note: no config_server_cb — node-ready is signalled via first vendor RX */
 
     esp_err_t err = esp_ble_mesh_init(&prov, &composition);
     if (err) {
@@ -480,7 +494,6 @@ esp_err_t ble_mesh_upgrade_to_provisioner(void)
 {
     esp_err_t err;
 
-    /* Provisioner always has unicast 0x0001 (set in prov struct) */
     s_own_unicast_addr = prov.prov_unicast_addr;
 
     if (esp_ble_mesh_node_is_provisioned()) {
@@ -534,7 +547,7 @@ esp_err_t ble_mesh_upgrade_to_provisioner(void)
         ESP_LOGW(TAG, "[prov] local model bind: %d", err);
     }
 
-    /* Directly add group address to provisioner's vendor model subscription list */
+    /* Subscribe provisioner's own vendor model to the group address directly */
     esp_ble_mesh_model_t *model = &vendor_models[0];
     bool subscribed = false;
     for (int i = 0; i < CONFIG_BLE_MESH_MODEL_GROUP_COUNT; i++) {
@@ -550,7 +563,6 @@ esp_err_t ble_mesh_upgrade_to_provisioner(void)
         ESP_LOGW(TAG, "[prov] no free group slots - increase CONFIG_BLE_MESH_MODEL_GROUP_COUNT");
     }
 
-    /* Set publish parameters so ble_mesh_broadcast_int() works immediately */
     vendor_models[0].pub->publish_addr = BROADCAST_GROUP_ADDR;
     vendor_models[0].pub->app_idx      = APP_KEY_IDX;
     vendor_models[0].pub->ttl          = 7;
@@ -559,17 +571,6 @@ esp_err_t ble_mesh_upgrade_to_provisioner(void)
     return ESP_OK;
 }
 
-/* -------- Public broadcast API -------- */
-
-/**
- * @brief Broadcast an int32_t value to all subscribed nodes on the mesh.
- *
- * The message is published to BROADCAST_GROUP_ADDR (0xC000).
- * All nodes provisioned by this provisioner are subscribed to that address.
- *
- * @param value  The integer to broadcast.
- * @return ESP_OK on success, or an esp_err_t error code.
- */
 esp_err_t ble_mesh_broadcast_int(int32_t value)
 {
     esp_ble_mesh_model_t *model = &vendor_models[0];
