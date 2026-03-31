@@ -197,7 +197,7 @@ static void prov_send_pub_set(uint16_t addr)
         .cred_flag          = false,
         .publish_ttl        = 7,
         .publish_period     = 0,
-        .publish_retransmit = ESP_BLE_MESH_TRANSMIT(2, 20),
+        .publish_retransmit = ESP_BLE_MESH_TRANSMIT(0, 0),
         .model_id           = VENDOR_MODEL_ID,
         .company_id         = CID_ESP,
     };
