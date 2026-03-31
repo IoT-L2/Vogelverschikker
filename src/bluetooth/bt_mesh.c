@@ -51,6 +51,12 @@ static bool s_network_formed = false;
 static bool s_bearer_enabled = false;
 static prov_step_t s_prov_step   = PROV_STEP_APP_KEY_ADD;
 
+static const uint8_t NET_KEY[16] = {
+    0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
+    0x00, 0x11, 0x22, 0x33, 0x44, 0x55,
+    0x66, 0x77, 0x88, 0x99
+};
+
 static const uint8_t APP_KEY[16] = {
     0x11, 0x22, 0x33, 0x44, 0x55, 0x66,
     0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc,
@@ -248,6 +254,7 @@ static void node_prov_cb(esp_ble_mesh_prov_cb_event_t event,
         s_iv_index = param->node_prov_complete.iv_index;
         ESP_LOGI(TAG, "[node] provisioned - unicast 0x%04x, iv_index %lu",
                  param->node_prov_complete.addr, s_iv_index);
+        ESP_LOGI(TAG, "[node] mesh network formed");
         s_network_formed = true;
         board_led_operation(LED_G, LED_OFF);
         break;
@@ -490,6 +497,42 @@ esp_err_t ble_mesh_upgrade_to_provisioner(void)
         ESP_LOGE(TAG, "[prov] UUID match failed (err %d)", err);
         return err;
     }
+
+    err = esp_ble_mesh_provisioner_add_local_net_key(NET_KEY, NET_KEY_IDX);
+    if (err) {
+        ESP_LOGW(TAG, "[prov] add net key: %d (may already exist)", err);
+    }
+
+    err = esp_ble_mesh_provisioner_add_local_app_key(APP_KEY, NET_KEY_IDX, APP_KEY_IDX);
+    if (err) {
+        ESP_LOGW(TAG, "[prov] add app key: %d (may already exist)", err);
+    }
+
+    err = esp_ble_mesh_provisioner_bind_app_key_to_local_model(
+        elements[0].element_addr, APP_KEY_IDX,
+        VENDOR_MODEL_ID, CID_ESP);
+    if (err) {
+        ESP_LOGW(TAG, "[prov] local model bind: %d", err);
+    }
+
+    esp_ble_mesh_model_t *model = &vendor_models[0];
+    bool subscribed = false;
+    for (int i = 0; i < CONFIG_BLE_MESH_MODEL_GROUP_COUNT; i++) {
+        if (model->groups[i] == ESP_BLE_MESH_ADDR_UNASSIGNED) {
+            model->groups[i] = BROADCAST_GROUP_ADDR;
+            ESP_LOGI(TAG, "[prov] subscribed local vendor model to 0x%04x",
+                     BROADCAST_GROUP_ADDR);
+            subscribed = true;
+            break;
+        }
+    }
+    if (!subscribed) {
+        ESP_LOGW(TAG, "[prov] no free group slots - increase CONFIG_BLE_MESH_MODEL_GROUP_COUNT");
+    }
+
+    model->pub->publish_addr = BROADCAST_GROUP_ADDR;
+    model->pub->app_idx      = APP_KEY_IDX;
+    model->pub->ttl          = 7;
 
     ESP_LOGI(TAG, "[prov] upgraded - scanning for unprovisioned devices");
     return ESP_OK;
