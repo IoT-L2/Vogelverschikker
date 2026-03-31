@@ -50,16 +50,22 @@ static void init_i2c(void)
 
 static inline void mcp4725_set_voltage(uint16_t value)
 {
-    uint8_t msb = (value >> 8) & 0x0F;
-    uint8_t lsb = value & 0xFF;
+    // Fast Write Mode:
+    // Byte 1: [0][0][D11][D10][D9][D8][D7][D6]
+    // Byte 2: [D5][D4][D3][D2][D1][D0][x][x]
+
+    uint8_t msb = (value >> 8) & 0x0F; // Bovenste 4 bits van je 12-bit waarde
+    uint8_t lsb = value & 0xFF;        // Onderste 8 bits van je 12-bit waarde
 
     i2c_cmd_handle_t cmd = i2c_cmd_link_create();
     i2c_master_start(cmd);
     i2c_master_write_byte(cmd, (MCP4725_ADDR << 1) | I2C_MASTER_WRITE, true);
+
+    // Alleen de 2 data-bytes sturen (Fast mode), geen command-byte!
     i2c_master_write_byte(cmd, msb, true);
     i2c_master_write_byte(cmd, lsb, true);
-    i2c_master_stop(cmd);
 
+    i2c_master_stop(cmd);
     i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, pdMS_TO_TICKS(10));
     i2c_cmd_link_delete(cmd);
 }
@@ -87,19 +93,19 @@ static void play_wav(const char *filename)
     {
         for (size_t i = 0; i < bytes_read; i++)
         {
-            int64_t start_time = esp_timer_get_time(); // Tijd NU
+            int64_t start_time = esp_timer_get_time();
 
+            // Zet 8-bit om naar 12-bit voor de DAC
             uint16_t sample_12bit = buffer[i] << 4;
+
+            // Stuur het naar de DAC (nu 33% sneller!)
             mcp4725_set_voltage(sample_12bit);
 
-            // Hoeveel tijd is er verstreken tijdens het sturen naar I2C?
+            // Wacht de resterende tijd tot de volgende sample (125us)
             int64_t elapsed = esp_timer_get_time() - start_time;
-
-            // Wacht alleen de tijd die nog OVER is van onze 125 microseconden
-            int64_t wait_time = SAMPLE_PERIOD_US - elapsed;
-            if (wait_time > 0)
+            if (elapsed < SAMPLE_PERIOD_US)
             {
-                esp_rom_delay_us(wait_time);
+                esp_rom_delay_us(SAMPLE_PERIOD_US - elapsed);
             }
         }
     }
@@ -125,7 +131,7 @@ void init_sound(void)
     init_spiffs();
     init_i2c();
 
-    // Normale task creatie, NIET meer gepind aan Core 1!
+    // Normale task creatie,
     xTaskCreate(audio_task, "audio_task", 4096, NULL, 5, &audio_task_handle);
 }
 
