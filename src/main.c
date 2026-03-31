@@ -1,46 +1,37 @@
-#include <esp_err.h>
-#include <esp_log.h>
-#include <nvs.h>
-#include <esp_random.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "driver/gpio.h"
+#include "esp_log.h"
+#include "sound.h"
 
-#define TAG "MAIN"
-#include <esp_ble_mesh_defs.h>
-#include <esp_bt_device.h>
-#include <nvs_flash.h>
+// Vul hier de GPIO pin in waar je sensor/knop op is aangesloten
+#define SENSOR_PIN GPIO_NUM_4
 
+// De interrupt functie
+static void IRAM_ATTR sensor_isr_handler(void *arg)
+{
+    // Wakker de audiotaak aan!
+    trigger_sound_from_isr();
+}
 
-#include "bluetooth/bt_mesh.h"
-#include "component/board.h"
-
-
-#define TAG             "MAIN"
-#define PROV_WAIT_MS    10000   /* how long to wait before becoming provisioner */
-
-
-/* ---------- App entry ---------- */
 void app_main(void)
 {
-    esp_err_t err;
+    // 1. Initialiseer I2C, SPIFFS en de audiotaak
+    init_sound();
 
-    ESP_LOGI(TAG, "Initializing...");
+    // 2. Configureer de sensor pin als een interrupt
+    gpio_config_t io_conf = {};
+    io_conf.intr_type = GPIO_INTR_NEGEDGE; // Triggert als het signaal LOW wordt (aarde raakt)
+    io_conf.pin_bit_mask = (1ULL << SENSOR_PIN);
+    io_conf.mode = GPIO_MODE_INPUT;
+    io_conf.pull_up_en = GPIO_PULLUP_ENABLE;
+    gpio_config(&io_conf);
 
-    err = nvs_flash_init();
-    if (err == ESP_ERR_NVS_NO_FREE_PAGES) {
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        err = nvs_flash_init();
-    }
-    ESP_ERROR_CHECK(err);
+    // 3. Koppel de interrupt aan de pin
+    gpio_install_isr_service(0);
+    gpio_isr_handler_add(SENSOR_PIN, sensor_isr_handler, NULL);
 
-    ESP_ERROR_CHECK(bluetooth_init());
-    ESP_ERROR_CHECK(ble_mesh_init_node());
+    ESP_LOGI("MAIN", "Systeem gestart! Verbind GPIO 4 met GND om geluid te testen.");
 
-    ESP_LOGI(TAG, "Waiting %d ms to be provisioned...", PROV_WAIT_MS);
-    vTaskDelay(pdMS_TO_TICKS(PROV_WAIT_MS));
-
-    if (!ble_mesh_is_provisioned()) {
-        ESP_LOGI(TAG, "Not provisioned — becoming provisioner");
-        ESP_ERROR_CHECK(ble_mesh_upgrade_to_provisioner());
-    } else {
-        ESP_LOGI(TAG, "Provisioned — running as node");
-    }
+    // Hieronder kun je later je BLE Mesh code toevoegen.
 }
