@@ -364,6 +364,52 @@ static void provisioner_prov_cb(esp_ble_mesh_prov_cb_event_t event,
         break;
     }
 }
+static void config_step_advance(uint32_t opcode, uint16_t addr)
+{
+    switch (opcode) {
+        case ESP_BLE_MESH_MODEL_OP_APP_KEY_ADD:
+            ESP_LOGI(TAG, "[prov] AppKey added to 0x%04x -> binding model", addr);
+            s_prov_step = PROV_STEP_APP_KEY_BIND;
+            prov_send_app_key_bind(s_target_unicast);
+            break;
+        case ESP_BLE_MESH_MODEL_OP_MODEL_APP_BIND:
+            ESP_LOGI(TAG, "[prov] App key bound on 0x%04x -> setting publication", addr);
+            s_prov_step = PROV_STEP_PUB_SET;
+            prov_send_pub_set(s_target_unicast);
+            break;
+        case ESP_BLE_MESH_MODEL_OP_MODEL_PUB_SET:
+            ESP_LOGI(TAG, "[prov] Publication set on 0x%04x -> adding subscription", addr);
+            s_prov_step = PROV_STEP_SUB_ADD;
+            prov_send_sub_add(s_target_unicast);
+            break;
+        case ESP_BLE_MESH_MODEL_OP_MODEL_SUB_ADD:
+            ESP_LOGI(TAG, "[prov] Subscription added on 0x%04x -> enabling relay", addr);
+            s_prov_step = PROV_STEP_RELAY_SET;
+            prov_send_relay_set(s_target_unicast);
+            break;
+        case ESP_BLE_MESH_MODEL_OP_RELAY_SET:
+            ESP_LOGI(TAG, "[prov] Relay enabled on 0x%04x - node fully configured", addr);
+            s_prov_step = PROV_STEP_DONE;
+            prov_send_node_configured();
+            break;
+        default:
+            break;
+    }
+}
+
+static void config_step_retry(uint32_t opcode)
+{
+    ESP_LOGW(TAG, "[prov] config timeout (opcode 0x%04" PRIx32 ") step %d - retrying",
+             opcode, s_prov_step);
+    switch (s_prov_step) {
+        case PROV_STEP_APP_KEY_ADD:  prov_send_app_key(s_target_unicast);      break;
+        case PROV_STEP_APP_KEY_BIND: prov_send_app_key_bind(s_target_unicast); break;
+        case PROV_STEP_PUB_SET:      prov_send_pub_set(s_target_unicast);      break;
+        case PROV_STEP_SUB_ADD:      prov_send_sub_add(s_target_unicast);      break;
+        case PROV_STEP_RELAY_SET:    prov_send_relay_set(s_target_unicast);    break;
+        default:                                                                break;
+    }
+}
 
 static void config_client_cb(esp_ble_mesh_cfg_client_cb_event_t event,
                              esp_ble_mesh_cfg_client_cb_param_t *param)
@@ -372,64 +418,14 @@ static void config_client_cb(esp_ble_mesh_cfg_client_cb_event_t event,
              event, param->params->opcode);
 
     switch (event) {
-    case ESP_BLE_MESH_CFG_CLIENT_SET_STATE_EVT:
-        switch (param->params->opcode) {
-
-        case ESP_BLE_MESH_MODEL_OP_APP_KEY_ADD:
-            ESP_LOGI(TAG, "[prov] AppKey added to 0x%04x -> binding model",
-                     param->params->ctx.addr);
-            s_prov_step = PROV_STEP_APP_KEY_BIND;
-            prov_send_app_key_bind(s_target_unicast);
+        case ESP_BLE_MESH_CFG_CLIENT_SET_STATE_EVT:
+            config_step_advance(param->params->opcode, param->params->ctx.addr);
             break;
-
-        case ESP_BLE_MESH_MODEL_OP_MODEL_APP_BIND:
-            ESP_LOGI(TAG, "[prov] App key bound on 0x%04x -> setting publication",
-                     param->params->ctx.addr);
-            s_prov_step = PROV_STEP_PUB_SET;
-            prov_send_pub_set(s_target_unicast);
+        case ESP_BLE_MESH_CFG_CLIENT_TIMEOUT_EVT:
+            config_step_retry(param->params->opcode);
             break;
-
-        case ESP_BLE_MESH_MODEL_OP_MODEL_PUB_SET:
-            ESP_LOGI(TAG, "[prov] Publication set on 0x%04x -> adding subscription",
-                     param->params->ctx.addr);
-            s_prov_step = PROV_STEP_SUB_ADD;
-            prov_send_sub_add(s_target_unicast);
-            break;
-
-        case ESP_BLE_MESH_MODEL_OP_MODEL_SUB_ADD:
-            ESP_LOGI(TAG, "[prov] Subscription added on 0x%04x -> enabling relay",
-                     param->params->ctx.addr);
-            s_prov_step = PROV_STEP_RELAY_SET;
-            prov_send_relay_set(s_target_unicast);
-            break;
-
-        case ESP_BLE_MESH_MODEL_OP_RELAY_SET:
-            ESP_LOGI(TAG, "[prov] Relay enabled on 0x%04x - node fully configured",
-                     param->params->ctx.addr);
-            s_prov_step = PROV_STEP_DONE;
-            prov_send_node_configured();
-            break;
-
         default:
             break;
-        }
-        break;
-
-    case ESP_BLE_MESH_CFG_CLIENT_TIMEOUT_EVT:
-        ESP_LOGW(TAG, "[prov] config timeout (opcode 0x%04" PRIx32
-                 ") step %d - retrying", param->params->opcode, s_prov_step);
-        switch (s_prov_step) {
-        case PROV_STEP_APP_KEY_ADD:  prov_send_app_key(s_target_unicast);      break;
-        case PROV_STEP_APP_KEY_BIND: prov_send_app_key_bind(s_target_unicast); break;
-        case PROV_STEP_PUB_SET:      prov_send_pub_set(s_target_unicast);      break;
-        case PROV_STEP_SUB_ADD:      prov_send_sub_add(s_target_unicast);      break;
-        case PROV_STEP_RELAY_SET:    prov_send_relay_set(s_target_unicast);    break;
-        default: break;
-        }
-        break;
-
-    default:
-        break;
     }
 }
 
