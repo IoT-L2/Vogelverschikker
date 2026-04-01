@@ -5,10 +5,6 @@ extern "C"
 {
 #endif
 
-//
-// bt_mesh.h - BLE Mesh public API
-//
-
 #include <esp_err.h>
 #include <stdbool.h>
 #include <stdint.h>
