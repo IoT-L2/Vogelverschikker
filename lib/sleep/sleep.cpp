@@ -4,6 +4,7 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "esp_sleep.h"
+#include "sound.h"
 
 static const char *TAG = "SleepManager";
 
@@ -52,6 +53,12 @@ void SleepManager::checkAndSleep()
         // Blijf in deze loop hangen zolang het donker is
         while (is_donker)
         {
+            if (is_sound_playing())
+            {
+                vTaskDelay(pdMS_TO_TICKS(200));
+                continue;
+            }
+
             vTaskDelay(pdMS_TO_TICKS(100)); // Geef de seriële monitor tijd om te printen
 
             // Start Light Sleep. De processor pauzeert hier!
@@ -64,17 +71,10 @@ void SleepManager::checkAndSleep()
             {
                 ESP_LOGI(TAG, "Wakker door KNOP! Geluid wordt afgespeeld...");
 
-                if (wakeup_reason == ESP_SLEEP_WAKEUP_GPIO)
+                // Wacht tot het geluid klaar is voordat we weer gaan slapen
+                while (is_sound_playing())
                 {
-                    ESP_LOGI(TAG, "Wakker door KNOP! Geluid wordt afgespeeld...");
-
-                    // We hebben de 'while(gpio_get_level)' verwijderd!
-                    // Het programma blokkeert nu niet meer als je de knop ingedrukt houdt.
-
-                    // Blijf wel nog even wakker zodat de audio-taak de tijd krijgt
-                    // om het geluid af te spelen (anders valt de ESP halverwege het liedje in slaap).
-                    // Pas deze 8000 aan naar de lengte van je geluid.
-                    vTaskDelay(pdMS_TO_TICKS(8000));
+                    vTaskDelay(pdMS_TO_TICKS(100));
                 }
             }
             else if (wakeup_reason == ESP_SLEEP_WAKEUP_TIMER)
