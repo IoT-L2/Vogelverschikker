@@ -6,7 +6,6 @@
 #include "esp_log.h"
 #include "rom/ets_sys.h"
 #include "esp_spiffs.h"
-#include "esp_task_wdt.h" // 🔥 Toegevoegd voor de watchdog
 
 static const char *TAG = "AUDIO";
 
@@ -21,8 +20,9 @@ static const char *TAG = "AUDIO";
 #define WAV_HEADER_SIZE 44
 #define AUDIO_BUFFER_SIZE 2048
 
-// 🔥 tuning (pas aan indien nodig)
-#define SAMPLE_DELAY_US 1
+// 🔥 FIX: 125us is de correcte pauze voor een 8000 Hz wav bestand.
+// Als je audio te traag klinkt, zet dit op 60 (voor 16kHz). Als het te snel klinkt, zet op 250 (voor 4kHz).
+#define SAMPLE_DELAY_US 45
 
 static TaskHandle_t audio_task_handle = NULL;
 
@@ -56,19 +56,14 @@ static void init_i2c(void)
 // ---------------- DAC ----------------
 static inline void mcp4725_set_voltage(uint16_t value)
 {
-    uint8_t msb = (value >> 8) & 0x0F;
-    uint8_t lsb = value & 0xFF;
+    uint8_t data[2];
+    // MCP4725 "Fast Write" mode: De eerste 4 bits zijn 0, gevolgd door 12 bits data
+    data[0] = (value >> 8) & 0x0F;
+    data[1] = value & 0xFF;
 
-    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-    i2c_master_start(cmd);
-    i2c_master_write_byte(cmd, (MCP4725_ADDR << 1) | I2C_MASTER_WRITE, true);
-    i2c_master_write_byte(cmd, msb, true);
-    i2c_master_write_byte(cmd, lsb, true);
-    i2c_master_stop(cmd);
-
-    i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, portMAX_DELAY);
-
-    i2c_cmd_link_delete(cmd);
+    // 🔥 FIX: Dit is een veel efficiëntere, moderne ESP-IDF functie!
+    // Hierdoor raakt de processor niet overbelast.
+    i2c_master_write_to_device(I2C_MASTER_NUM, MCP4725_ADDR, data, 2, pdMS_TO_TICKS(10));
 }
 
 // ---------------- WAV ----------------
@@ -98,14 +93,13 @@ static void play_wav(const char *filename)
             uint16_t sample = buffer[i] << 4;
 
             mcp4725_set_voltage(sample);
+
+            // Busy-wait voor de sample frequentie
             ets_delay_us(SAMPLE_DELAY_US);
         }
 
-        // 🔥 Vertel de watchdog dat we nog in leven zijn
-        esp_task_wdt_reset();
-
-        // Korte adempauze voor andere processen
-        vTaskDelay(1);
+        // 🔥 FIX 1: Geef de watchdog van Core 1 even ademruimte na elk datablok!
+        vTaskDelay(pdMS_TO_TICKS(5));
     }
 
     fclose(f);
@@ -117,16 +111,10 @@ static void play_wav(const char *filename)
 // ---------------- TASK ----------------
 static void audio_task(void *pvParameters)
 {
-    // 🔥 Abonneer deze specifieke taak op de Task Watchdog
-    esp_task_wdt_add(NULL);
-
     while (1)
     {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
         play_wav("tetrismusic.wav");
-
-        // Ook even resetten als we wachten op de volgende notificatie
-        esp_task_wdt_reset();
     }
 }
 
@@ -138,7 +126,9 @@ void init_sound(void)
     init_spiffs();
     init_i2c();
 
-    xTaskCreate(audio_task, "audio_task", 8192, NULL, 5, &audio_task_handle);
+    // 🔥 FIX 2: Pin de taak vast aan Core 1 in plaats van willekeurig!
+    // Parameter 1 (helemaal achteraan) is de Core ID.
+    xTaskCreatePinnedToCore(audio_task, "audio_task", 8192, NULL, 5, &audio_task_handle, 1);
 }
 
 // ---------------- TRIGGER ----------------
@@ -156,9 +146,7 @@ void trigger_sound_from_isr(void)
     if (audio_task_handle != NULL)
     {
         BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-
         vTaskNotifyGiveFromISR(audio_task_handle, &xHigherPriorityTaskWoken);
-
         if (xHigherPriorityTaskWoken)
         {
             portYIELD_FROM_ISR();
