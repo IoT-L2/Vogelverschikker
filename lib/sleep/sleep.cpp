@@ -76,11 +76,6 @@ void SleepManager::checkAndSleep()
                     // Pas deze 8000 aan naar de lengte van je geluid.
                     vTaskDelay(pdMS_TO_TICKS(8000));
                 }
-
-                // Belangrijk: Blijf even 8 seconden geforceerd wakker.
-                // Dit geeft de audio-taak op de achtergrond de tijd om je geluid volledig
-                // af te spelen voordat we de processor weer in slaap laten vallen!
-                vTaskDelay(pdMS_TO_TICKS(8000));
             }
             else if (wakeup_reason == ESP_SLEEP_WAKEUP_TIMER)
             {
