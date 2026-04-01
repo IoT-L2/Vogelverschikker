@@ -76,6 +76,13 @@ void SleepManager::checkAndSleep()
                 {
                     vTaskDelay(pdMS_TO_TICKS(100));
                 }
+
+                // Wacht tot de knop losgelaten is voordat we weer gaan slapen
+                vTaskDelay(pdMS_TO_TICKS(100));
+                while (gpio_get_level(BUTTON_PIN) == 0)
+                {
+                    vTaskDelay(pdMS_TO_TICKS(50));
+                }
             }
             else if (wakeup_reason == ESP_SLEEP_WAKEUP_TIMER)
             {

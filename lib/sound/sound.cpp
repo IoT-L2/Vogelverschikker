@@ -14,7 +14,6 @@
 
 static const char *TAG = "AUDIO";
 
-// ---------------- CONFIG ----------------
 #define I2C_MASTER_SDA_IO 4
 #define I2C_MASTER_SCL_IO 5
 #define I2C_MASTER_NUM I2C_NUM_0
@@ -27,10 +26,8 @@ static const char *TAG = "AUDIO";
 
 #define MAX_FILENAME_LEN 32
 
-// ---------------- GLOBALS ----------------
 static TaskHandle_t audio_task_handle = NULL;
 static QueueHandle_t audio_queue = NULL;
-
 static volatile bool is_playing = false;
 
 // ---------------- SPIFFS ----------------
@@ -80,6 +77,7 @@ static void play_wav(const char *filename)
     if (!f)
     {
         ESP_LOGE(TAG, "Kan bestand niet openen: %s", filepath);
+        is_playing = false;
         return;
     }
 
@@ -87,8 +85,6 @@ static void play_wav(const char *filename)
 
     uint8_t buffer[AUDIO_BUFFER_SIZE];
     size_t bytes_read;
-
-    is_playing = true;
 
     ESP_LOGI(TAG, "Start afspelen: %s", filename);
 
@@ -100,6 +96,7 @@ static void play_wav(const char *filename)
             mcp4725_set_voltage(sample);
             ets_delay_us(SAMPLE_DELAY_US);
         }
+        vTaskDelay(pdMS_TO_TICKS(1));
     }
 
     fclose(f);
@@ -134,7 +131,7 @@ void init_sound(void)
 
     audio_queue = xQueueCreate(1, MAX_FILENAME_LEN);
 
-    xTaskCreatePinnedToCore(audio_task, "audio_task", 8192, NULL, 10, &audio_task_handle, 1);
+    xTaskCreatePinnedToCore(audio_task, "audio_task", 8192, NULL, 8, &audio_task_handle, 1);
 }
 
 // ---------------- PLAY FUNCTION ----------------
@@ -148,36 +145,17 @@ void play_sound(const char *filename)
         return;
     }
 
+    is_playing = true;
+
     char buffer[MAX_FILENAME_LEN];
     strncpy(buffer, filename, MAX_FILENAME_LEN - 1);
     buffer[MAX_FILENAME_LEN - 1] = '\0';
 
-    xQueueOverwrite(audio_queue, &buffer);
+    xQueueReset(audio_queue);
+    xQueueSend(audio_queue, &buffer, pdMS_TO_TICKS(100));
 }
 
 bool is_sound_playing(void)
 {
     return is_playing;
 }
-
-// // ---------------- ISR VERSION ----------------
-// void play_sound_from_isr(const char *filename)
-// {
-//     if (audio_queue == NULL) return;
-//
-//     // 🔥 ook in ISR negeren
-//     if (is_playing) return;
-//
-//     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-//
-//     char buffer[MAX_FILENAME_LEN];
-//     strncpy(buffer, filename, MAX_FILENAME_LEN - 1);
-//     buffer[MAX_FILENAME_LEN - 1] = '\0';
-//
-//     xQueueOverwriteFromISR(audio_queue, &buffer, &xHigherPriorityTaskWoken);
-//
-//     if (xHigherPriorityTaskWoken)
-//     {
-//         portYIELD_FROM_ISR();
-//     }
-// }

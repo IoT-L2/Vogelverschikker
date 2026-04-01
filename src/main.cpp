@@ -28,8 +28,8 @@ static volatile uint32_t last_isr_time = 0;
 
 static void IRAM_ATTR button_isr_handler(void *arg)
 {
-    uint32_t now = xTaskGetTickCountFromISR() * portTICK_PERIOD_MS;
-    if (now - last_isr_time < 250) return;
+    uint32_t now = (uint32_t)xTaskGetTickCountFromISR();
+    if (now - last_isr_time < 500) return;
     last_isr_time = now;
 
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
@@ -41,7 +41,7 @@ static void button_task(void *arg)
 {
     while (1)
     {
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY); // sleeps until ISR fires
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
         ble_mesh_broadcast_int(1);
     }
 }
@@ -59,7 +59,7 @@ extern "C" void app_main(void)
     btn_config.mode = GPIO_MODE_INPUT;
     btn_config.pull_up_en = GPIO_PULLUP_ENABLE;
     btn_config.pull_down_en = GPIO_PULLDOWN_DISABLE;
-    btn_config.intr_type = GPIO_INTR_NEGEDGE;
+    btn_config.intr_type = GPIO_INTR_POSEDGE;
     ESP_ERROR_CHECK(gpio_config(&btn_config));
 
     xTaskCreate(button_task, "button_task", 4096, NULL, 10, &s_button_task_handle);
