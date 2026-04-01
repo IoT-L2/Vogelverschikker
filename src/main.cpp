@@ -131,7 +131,6 @@ extern "C" void app_main(void)
         while (1) {
             vTaskDelay(pdMS_TO_TICKS(5000));
             sleepCtrl.checkAndSleep();
-            //ble_mesh_broadcast_int(counter++);
         }
     } else {
         ESP_LOGI(TAG, "Provisioned - waiting for full config from provisioner...");
@@ -140,7 +139,6 @@ extern "C" void app_main(void)
         ESP_LOGI(TAG, "Node fully configured - starting broadcast loop");
 
         while (1) {
-            ble_mesh_broadcast_int(42);
             sleepCtrl.checkAndSleep();
             vTaskDelay(pdMS_TO_TICKS(5000));
         }

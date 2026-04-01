@@ -92,20 +92,32 @@ static void play_wav(const char *filename)
     {
         for (size_t i = 0; i < bytes_read; i++)
         {
+            if (!is_playing) {
+                fclose(f);
+                mcp4725_set_voltage(0);
+                is_playing = false;
+                return;
+            }
             uint16_t sample = buffer[i] << 4;
             mcp4725_set_voltage(sample);
             ets_delay_us(SAMPLE_DELAY_US);
+
+            // Yield elke ~200 samples (~9ms) zodat de WDT niet afloopt
+            if ((i & 0xFF) == 0)
+            {
+                taskYIELD();
+            }
         }
-        vTaskDelay(pdMS_TO_TICKS(1));
+        // vTaskDelay(pdMS_TO_TICKS(1)); ← dit mag weg, taskYIELD hierboven is voldoende
     }
 
     fclose(f);
     mcp4725_set_voltage(0);
-
     is_playing = false;
 
     ESP_LOGI(TAG, "Klaar met afspelen.");
 }
+
 
 // ---------------- TASK ----------------
 static void audio_task(void *pvParameters)
@@ -158,4 +170,12 @@ void play_sound(const char *filename)
 bool is_sound_playing(void)
 {
     return is_playing;
+}
+
+// sound.cpp
+void stop_sound(void)
+{
+    if (!is_playing) return;
+    is_playing = false;
+    xQueueReset(audio_queue);
 }

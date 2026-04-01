@@ -43,6 +43,8 @@ void SleepManager::checkAndSleep()
     // Als het donker is, starten we de slaap-loop
     if (ldr_val < _dark_threshold)
     {
+        stop_sound();
+        vTaskDelay(pdMS_TO_TICKS(50));
         ESP_LOGW(TAG, "Het is donker! Slaapcyclus gestart...");
 
         // Vertel de ESP32 dat hij ook wakker mag worden van een timer (elke 5 seconden)
@@ -53,31 +55,17 @@ void SleepManager::checkAndSleep()
         // Blijf in deze loop hangen zolang het donker is
         while (is_donker)
         {
-            if (is_sound_playing())
-            {
-                vTaskDelay(pdMS_TO_TICKS(200));
-                continue;
-            }
-
             vTaskDelay(pdMS_TO_TICKS(100)); // Geef de seriële monitor tijd om te printen
 
             // Start Light Sleep. De processor pauzeert hier!
             esp_light_sleep_start();
 
-            // --- DE ESP32 ONTWAAKT HIER (door knop óf door 5-sec timer) ---
             esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
 
             if (wakeup_reason == ESP_SLEEP_WAKEUP_GPIO)
             {
                 ESP_LOGI(TAG, "Wakker door KNOP! Geluid wordt afgespeeld...");
 
-                // Wacht tot het geluid klaar is voordat we weer gaan slapen
-                while (is_sound_playing())
-                {
-                    vTaskDelay(pdMS_TO_TICKS(100));
-                }
-
-                // Wacht tot de knop losgelaten is voordat we weer gaan slapen
                 vTaskDelay(pdMS_TO_TICKS(100));
                 while (gpio_get_level(BUTTON_PIN) == 0)
                 {
@@ -97,13 +85,8 @@ void SleepManager::checkAndSleep()
                 ESP_LOGI(TAG, "Het is weer licht (Waarde: %d)! Ik blijf helemaal wakker.", ldr_val);
                 is_donker = false; // Dit verbreekt de while-loop, we gaan terug naar main.cpp
             }
-            else
-            {
-                if (wakeup_reason == ESP_SLEEP_WAKEUP_GPIO)
-                {
-                    ESP_LOGI(TAG, "Muziek is klaar, maar het is nog donker. Verder slapen...");
-                }
-            }
         }
     }
+
+
 }
