@@ -5,9 +5,18 @@
 #include "esp_sleep.h"
 #include "esp_attr.h"
 #include "sound.h"
+#include <esp_err.h>
+#include <nvs.h>
+#include <nvs_flash.h>
+#include <freertos/semphr.h>
+
+#include "bluetooth/bt_mesh.h"
 #include "sleep.h"
 
-#define BUTTON_PIN GPIO_NUM_41 // Zelfde pin voor wake-up EN geluid
+
+#define TAG          "MAIN"
+#define PROV_WAIT_MS 10000
+#define BUTTON_PIN GPIO_NUM_41
 
 // Variabele om bij te houden wanneer de knop voor het laatst is ingedrukt (Debounce)
 static uint32_t last_isr_time = 0;
@@ -24,6 +33,13 @@ static void IRAM_ATTR button_isr_handler(void *arg)
         last_isr_time = current_time;
         trigger_sound_from_isr();
     }
+}
+
+static SemaphoreHandle_t s_node_ready;
+
+void ble_mesh_on_node_configured(void)
+{
+    xSemaphoreGive(s_node_ready);
 }
 
 extern "C" void app_main(void)
@@ -56,11 +72,41 @@ extern "C" void app_main(void)
 
     ESP_LOGI("MAIN", "Systeem is klaar. Druk op knop (GPIO41 → GND) voor geluid.");
 
-    while (1)
-    {
-        // Check de LDR en ga in sleep als het donker is
-        sleepCtrl.checkAndSleep();
+    s_node_ready = xSemaphoreCreateBinary();
 
+    esp_err_t err = nvs_flash_init();
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        err = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(err);
+
+    ESP_ERROR_CHECK(bluetooth_init());
+    ESP_ERROR_CHECK(ble_mesh_init_node());
+
+    ESP_LOGI(TAG, "Waiting %d ms to be provisioned...", PROV_WAIT_MS);
+    vTaskDelay(pdMS_TO_TICKS(PROV_WAIT_MS));
+
+    if (!ble_mesh_is_provisioned()) {
+        ESP_LOGI(TAG, "Not provisioned - becoming provisioner");
+        ESP_ERROR_CHECK(ble_mesh_upgrade_to_provisioner());
+
+        int32_t counter = 0;
+        while (1) {
+            vTaskDelay(pdMS_TO_TICKS(5000));
+            sleepCtrl.checkAndSleep();
+            ble_mesh_broadcast_int(counter++);
+        }
+    } else {
+        ESP_LOGI(TAG, "Provisioned - waiting for full config from provisioner...");
+        xSemaphoreTake(s_node_ready, portMAX_DELAY);
         vTaskDelay(pdMS_TO_TICKS(1000));
+        ESP_LOGI(TAG, "Node fully configured - starting broadcast loop");
+
+        while (1) {
+            ble_mesh_broadcast_int(42);
+            sleepCtrl.checkAndSleep();
+            vTaskDelay(pdMS_TO_TICKS(5000));
+        }
     }
 }
