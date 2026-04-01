@@ -51,6 +51,7 @@ void app_main(void)
     } else {
         ESP_LOGI(TAG, "Provisioned - waiting for full config from provisioner...");
         xSemaphoreTake(s_node_ready, portMAX_DELAY);
+        vTaskDelay(pdMS_TO_TICKS(1000));
         ESP_LOGI(TAG, "Node fully configured - starting broadcast loop");
 
         while (1) {
