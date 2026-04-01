@@ -64,10 +64,17 @@ void SleepManager::checkAndSleep()
             {
                 ESP_LOGI(TAG, "Wakker door KNOP! Geluid wordt afgespeeld...");
 
-                // Wacht tot de knop wordt losgelaten
-                while (gpio_get_level(BUTTON_PIN) == 0)
+                if (wakeup_reason == ESP_SLEEP_WAKEUP_GPIO)
                 {
-                    vTaskDelay(pdMS_TO_TICKS(50));
+                    ESP_LOGI(TAG, "Wakker door KNOP! Geluid wordt afgespeeld...");
+
+                    // We hebben de 'while(gpio_get_level)' verwijderd!
+                    // Het programma blokkeert nu niet meer als je de knop ingedrukt houdt.
+
+                    // Blijf wel nog even wakker zodat de audio-taak de tijd krijgt
+                    // om het geluid af te spelen (anders valt de ESP halverwege het liedje in slaap).
+                    // Pas deze 8000 aan naar de lengte van je geluid.
+                    vTaskDelay(pdMS_TO_TICKS(8000));
                 }
 
                 // Belangrijk: Blijf even 8 seconden geforceerd wakker.
