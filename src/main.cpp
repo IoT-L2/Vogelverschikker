@@ -9,10 +9,8 @@
 #include <nvs.h>
 #include <nvs_flash.h>
 #include <freertos/semphr.h>
-
 #include "bluetooth/bt_mesh.h"
 #include "sleep.h"
-
 
 #define TAG          "MAIN"
 #define PROV_WAIT_MS 10000
