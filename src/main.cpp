@@ -9,6 +9,7 @@
 #include <nvs.h>
 #include <nvs_flash.h>
 #include <freertos/semphr.h>
+#include <freertos/queue.h>
 #include "bluetooth/bt_mesh.h"
 #include "sleep.h"
 
@@ -25,12 +26,16 @@ void ble_mesh_on_node_configured(void)
 
 static TaskHandle_t s_button_task_handle = NULL;
 static volatile uint32_t last_isr_time = 0;
+static QueueHandle_t s_broadcast_queue = NULL;
 
 static void IRAM_ATTR button_isr_handler(void *arg)
 {
     uint32_t now = (uint32_t)xTaskGetTickCountFromISR();
-    if (now - last_isr_time < 500) return;
+    if (now - last_isr_time < pdMS_TO_TICKS(500)) return;  // ← was gewoon 500 (ms vs ticks!)
     last_isr_time = now;
+
+    // Disable de interrupt METEEN, re-enable na debounce in de task
+    gpio_isr_handler_remove(BUTTON_PIN);  // ← NIEUW: stop ISR spam
 
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
     vTaskNotifyGiveFromISR(s_button_task_handle, &xHigherPriorityTaskWoken);
@@ -42,7 +47,30 @@ static void button_task(void *arg)
     while (1)
     {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-        ble_mesh_broadcast_int(1);
+
+
+        while (gpio_get_level(BUTTON_PIN) == 0) {
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
+        vTaskDelay(pdMS_TO_TICKS(50));
+
+        uint32_t broadcast_value = 1;
+        xQueueSend(s_broadcast_queue, &broadcast_value, pdMS_TO_TICKS(100));
+
+        gpio_isr_handler_add(BUTTON_PIN, button_isr_handler, NULL);  // ← NIEUW
+    }
+}
+
+static void broadcast_task(void *arg)
+{
+    uint32_t broadcast_value;
+    
+    while (1)
+    {
+        if (xQueueReceive(s_broadcast_queue, &broadcast_value, portMAX_DELAY) == pdTRUE)
+        {
+            ble_mesh_broadcast_int(broadcast_value);
+        }
     }
 }
 
@@ -62,7 +90,11 @@ extern "C" void app_main(void)
     btn_config.intr_type = GPIO_INTR_POSEDGE;
     ESP_ERROR_CHECK(gpio_config(&btn_config));
 
+    s_broadcast_queue = xQueueCreate(10, sizeof(uint32_t));
+    
     xTaskCreate(button_task, "button_task", 4096, NULL, 10, &s_button_task_handle);
+    xTaskCreate(broadcast_task, "broadcast_task", 4096, NULL, 9, NULL);
+    
     // Koppel de ISR (voor het geluid)
     ESP_ERROR_CHECK(gpio_install_isr_service(0));
     ESP_ERROR_CHECK(gpio_isr_handler_add(BUTTON_PIN, button_isr_handler, NULL));
