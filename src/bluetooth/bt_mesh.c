@@ -18,7 +18,6 @@
 #include <esp_ble_mesh_config_model_api.h>
 #include <esp_ble_mesh_health_model_api.h>
 
-#include "component/board.h"
 
 #define TAG             "MESH"
 #define CID_ESP         0x02E5
@@ -272,7 +271,6 @@ static void node_prov_cb(esp_ble_mesh_prov_cb_event_t event,
         ESP_LOGI(TAG, "[node] provisioned - unicast 0x%04x, iv_index %lu",
                  param->node_prov_complete.addr, s_iv_index);
         vTaskDelay(pdMS_TO_TICKS(500));
-        board_led_operation(LED_G, LED_OFF);
         break;
 
     default:
@@ -355,7 +353,6 @@ static void provisioner_prov_cb(esp_ble_mesh_prov_cb_event_t event,
         s_prov_step      = PROV_STEP_APP_KEY_ADD;
         ESP_LOGI(TAG, "[prov] node provisioned - unicast 0x%04x, starting config",
                  s_target_unicast);
-        board_led_operation(LED_G, LED_ON);
         prov_send_app_key(s_target_unicast);
         break;
 

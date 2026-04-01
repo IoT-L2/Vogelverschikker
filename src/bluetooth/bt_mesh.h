@@ -1,5 +1,10 @@
 #pragma once
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
 //
 // bt_mesh.h - BLE Mesh public API
 //
@@ -40,3 +45,7 @@ esp_err_t ble_mesh_broadcast_int(int32_t value);
 
 
 __attribute__((weak)) void ble_mesh_on_node_configured(void);
+
+#ifdef __cplusplus
+}
+#endif

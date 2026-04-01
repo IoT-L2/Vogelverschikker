@@ -3,12 +3,28 @@
 #include "esp_log.h"
 #include "driver/gpio.h"
 #include "sound.h"
+#include <esp_err.h>
+#include <nvs.h>
+#include <nvs_flash.h>
+#include <freertos/semphr.h>
 
-#define BUTTON_PIN GPIO_NUM_41 // 🔥 FIX: andere pin!
+#include "bluetooth/bt_mesh.h"
+
+
+#define TAG          "MAIN"
+#define PROV_WAIT_MS 10000
+#define BUTTON_PIN GPIO_NUM_41
 
 static void IRAM_ATTR button_isr_handler(void *arg)
 {
     trigger_sound_from_isr();
+}
+
+static SemaphoreHandle_t s_node_ready;
+
+void ble_mesh_on_node_configured(void)
+{
+    xSemaphoreGive(s_node_ready);
 }
 
 extern "C" void app_main(void)
@@ -30,8 +46,39 @@ extern "C" void app_main(void)
 
     ESP_LOGI("MAIN", "Druk op knop (GPIO41 → GND)");
 
-    while (1)
-    {
+    s_node_ready = xSemaphoreCreateBinary();
+
+    esp_err_t err = nvs_flash_init();
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        err = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(err);
+
+    ESP_ERROR_CHECK(bluetooth_init());
+    ESP_ERROR_CHECK(ble_mesh_init_node());
+
+    ESP_LOGI(TAG, "Waiting %d ms to be provisioned...", PROV_WAIT_MS);
+    vTaskDelay(pdMS_TO_TICKS(PROV_WAIT_MS));
+
+    if (!ble_mesh_is_provisioned()) {
+        ESP_LOGI(TAG, "Not provisioned - becoming provisioner");
+        ESP_ERROR_CHECK(ble_mesh_upgrade_to_provisioner());
+
+        int32_t counter = 0;
+        while (1) {
+            vTaskDelay(pdMS_TO_TICKS(5000));
+            ble_mesh_broadcast_int(counter++);
+        }
+    } else {
+        ESP_LOGI(TAG, "Provisioned - waiting for full config from provisioner...");
+        xSemaphoreTake(s_node_ready, portMAX_DELAY);
         vTaskDelay(pdMS_TO_TICKS(1000));
+        ESP_LOGI(TAG, "Node fully configured - starting broadcast loop");
+
+        while (1) {
+            ble_mesh_broadcast_int(42);
+            vTaskDelay(pdMS_TO_TICKS(5000));
+        }
     }
 }
