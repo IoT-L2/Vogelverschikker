@@ -1,7 +1,7 @@
 {
     "version":            "1.2",
     "project_name":       "vogel",
-    "project_version":    "02779ec-dirty",
+    "project_version":    "1ce765b-dirty",
     "project_path":       "C:/Users/danie/OneDrive/Documenten/GitHub/Vogelverschikker",
     "idf_path":           "C:/Users/danie/.platformio/packages/framework-espidf",
     "build_dir":          "C:/Users/danie/OneDrive/Documenten/GitHub/Vogelverschikker/.pio/build/esp32-s3-devkitc-1",
