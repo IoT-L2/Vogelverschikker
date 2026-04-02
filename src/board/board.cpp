@@ -12,6 +12,8 @@
 #include "sound.h"
 #include "esp_log.h"
 #include "esp_sleep.h"
+#include "main.h"
+#include "bluetooth/blepacket.h"
 #include "bluetooth/bt_mesh.h"
 #include "driver/gpio.h"
 #include "freertos/semphr.h"
@@ -36,6 +38,7 @@ static void IRAM_ATTR button_isr_handler(void *arg)
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
+
 static void button_task(void *arg)
 {
     while (1)
@@ -46,11 +49,28 @@ static void button_task(void *arg)
             vTaskDelay(pdMS_TO_TICKS(10));
         vTaskDelay(pdMS_TO_TICKS(50));
 
-        ble_mesh_broadcast_int(1);
 
+        char count[16];
+        int number = 0;
+        if (detections.getLine(0, count, sizeof(count))) {
+            number = atoi(count);
+            number += 1;
+
+            // save it back
+            char new_value[16];
+            snprintf(new_value, sizeof(new_value), "%d", number);
+            detections.setLine(0, new_value);
+        } else {
+            // default 0
+            detections.setLine(0, "0");
+        }
+        ESP_LOGI(TAG, "Increased this nodes count by 1 now total: %i", number);
+        ble_mesh_broadcast_int(ble_play_sound_packet());
+        send_data_packet();
         gpio_isr_handler_add(BUTTON_PIN, button_isr_handler, NULL);
     }
 }
+
 
 void board_init()
 {

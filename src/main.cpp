@@ -23,8 +23,7 @@ extern "C" void app_main()
     nvs2_init();
     spiffs_init();
 
-     audio_cfg.setLine(0,"tetrismusic.wav");
-    detections.setLine( 0, "0");
+
 
 
     // Init and start the sleep monitor as an FreeRTOS task.

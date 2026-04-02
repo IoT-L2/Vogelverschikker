@@ -1,4 +1,6 @@
 #include "bt_handler.h"
+
+#include "blepacket.h"
 #include "bt_mesh.h"
 #include "sound.h"
 
@@ -11,24 +13,9 @@
 #define TAG          "BT_HANDLER"
 #define PROV_WAIT_MS 10000
 
-void handle_code_1() {
+bool is_provsioner = false;
 
-    char count[16];
-    if (detections.getLine(0, count, sizeof(count))) {
-        int number = atoi(count);
-        number += 1;
-
-        // save it back
-        char new_value[16];
-        snprintf(new_value, sizeof(new_value), "%d", number);
-        detections.setLine(0, new_value);
-    } else {
-        // default 0
-        detections.setLine(0, "0");
-    }
-
-    //TODO: add api call here to push data
-
+void handle_play_sound() {
     char filename[64];
     if (audio_cfg.getLine(0, filename, sizeof(filename))) {
         ESP_LOGI(TAG, "Audio file: %s", filename);
@@ -40,12 +27,44 @@ void handle_code_1() {
 
 }
 
+void send_data_packet() {
+    char count[16];
+    int number = 0;
+    if (detections.getLine(0, count, sizeof(count))) {
+        number = atoi(count);
+    } else {
+        number = 0;
+        detections.setLine(0, "0");
+    }
+    ble_mesh_broadcast_int(ble_data_packet(get_uuid()[7],number, sound_get_current()));
+}
+
+
+void handle_data_recieved(uint8_t node_id, uint16_t total, SoundIndex sound) {
+
+    if (!is_provsioner) return;
+    uint8_t node_mac = node_id;
+    uint16_t total_from_node = total;
+    //TODO: time = get current time
+    SoundIndex sound_from_node = sound;
+    //TODO: send to api
+    ESP_LOGI(TAG, "Received data from node %i , %i , %i", node_id,total_from_node,sound_from_node);
+}
 extern "C" void on_bt_received(int32_t value)
 {
+    BlePacket p = blepacket_unpack(value);
     ESP_LOGI(TAG, "[vendor] received value: %" PRId32, value);
-    switch (value) {
-        case 1:  handle_code_1(); break;
-        default: break;
+    switch (p.code) {
+        case BLE_CODE_PLAY_SOUND:
+            handle_play_sound();
+            break;
+        case BLE_CODE_CHANGE_SOUND:
+            sound_switch((SoundIndex)p.arg1);
+            break;
+        case BLE_CODE_DATA: {
+            handle_data_recieved(p.arg1, (uint16_t)p.arg3, (SoundIndex)p.arg2);
+            break;
+        }
     }
 }
 
@@ -79,7 +98,7 @@ void init_ble_mesh_config()
         ESP_LOGI(TAG, "Not provisioned — becoming provisioner");
         ESP_ERROR_CHECK(ble_mesh_upgrade_to_provisioner());
         //can add a while loop here?
-
+        is_provsioner = true;
     } else {
         ESP_LOGI(TAG, "Provisioned — waiting for full config from provisioner ...");
         xSemaphoreTake(s_node_ready, portMAX_DELAY);

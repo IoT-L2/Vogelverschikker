@@ -39,6 +39,16 @@ bool ble_mesh_is_provisioned(void);
  */
 esp_err_t ble_mesh_broadcast_int(int32_t value);
 
+/**
+ *
+ * @return UUID of node (prefix + mac +0000000)
+ */
+const uint8_t* get_uuid(void);
+
+/**
+ * send the data to the proivisoner
+ */
+void send_data_packet();
 
 __attribute__((weak)) void ble_mesh_on_node_configured(void);
 

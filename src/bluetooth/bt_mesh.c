@@ -74,6 +74,9 @@ static void build_dev_uuid(void)
     memcpy(dev_uuid + 2, esp_bt_dev_get_address(), BD_ADDR_LEN);
 }
 
+const uint8_t* get_uuid(void) {
+    return dev_uuid;
+}
 
 /* -------- Vendor model -------- */
 static esp_ble_mesh_model_op_t vendor_ops[] = {
