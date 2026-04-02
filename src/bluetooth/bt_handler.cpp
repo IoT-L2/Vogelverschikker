@@ -3,6 +3,7 @@
 #include "sound.h"
 
 #include "esp_log.h"
+#include "main.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
@@ -10,11 +11,40 @@
 #define TAG          "BT_HANDLER"
 #define PROV_WAIT_MS 10000
 
+void handle_code_1() {
+
+    char count[16];
+    if (detections.getLine(0, count, sizeof(count))) {
+        int number = atoi(count);
+        number += 1;
+
+        // save it back
+        char new_value[16];
+        snprintf(new_value, sizeof(new_value), "%d", number);
+        detections.setLine(0, new_value);
+    } else {
+        // default 0
+        detections.setLine(0, "0");
+    }
+
+    //TODO: add api call here to push data
+
+    char filename[64];
+    if (audio_cfg.getLine(0, filename, sizeof(filename))) {
+        ESP_LOGI(TAG, "Audio file: %s", filename);
+    } else {
+        //default
+        strncpy(filename, "default.mp3", sizeof(filename));
+    }
+    play_sound(filename);
+
+}
+
 extern "C" void on_bt_received(int32_t value)
 {
     ESP_LOGI(TAG, "[vendor] received value: %" PRId32, value);
     switch (value) {
-        case 1:  play_sound("tetrismusic.wav"); break;
+        case 1:  handle_code_1(); break;
         default: break;
     }
 }
