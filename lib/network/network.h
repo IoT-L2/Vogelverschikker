@@ -1,0 +1,8 @@
+//
+// Created by Christian ten Brinke on 02/04/2026.
+//
+
+#ifndef VOGELVERSCHIKKER_NETWORK_H
+#define VOGELVERSCHIKKER_NETWORK_H
+
+#endif //VOGELVERSCHIKKER_NETWORK_H
