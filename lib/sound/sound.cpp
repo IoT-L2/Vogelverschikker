@@ -1,42 +1,34 @@
 #include "sound.h"
 #include <stdio.h>
+#include <string.h>
+#include <stdbool.h>
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/queue.h"
+
 #include "driver/i2c.h"
 #include "esp_log.h"
 #include "rom/ets_sys.h"
-#include "esp_spiffs.h"
+
 
 static const char *TAG = "AUDIO";
 
-// I2C
 #define I2C_MASTER_SDA_IO 4
 #define I2C_MASTER_SCL_IO 5
 #define I2C_MASTER_NUM I2C_NUM_0
 #define I2C_MASTER_FREQ_HZ 1000000
 #define MCP4725_ADDR 0x60
 
-// Audio
 #define WAV_HEADER_SIZE 44
 #define AUDIO_BUFFER_SIZE 2048
-
-// 🔥 FIX: 125us is de correcte pauze voor een 8000 Hz wav bestand.
-// Als je audio te traag klinkt, zet dit op 60 (voor 16kHz). Als het te snel klinkt, zet op 250 (voor 4kHz).
 #define SAMPLE_DELAY_US 45
 
+#define MAX_FILENAME_LEN 32
+
 static TaskHandle_t audio_task_handle = NULL;
-
-// ---------------- SPIFFS ----------------
-static void init_spiffs(void)
-{
-    esp_vfs_spiffs_conf_t conf = {
-        .base_path = "/spiffs",
-        .partition_label = NULL,
-        .max_files = 5,
-        .format_if_mount_failed = true};
-
-    esp_vfs_spiffs_register(&conf);
-}
+static QueueHandle_t audio_queue = NULL;
+static volatile bool is_playing = false;
 
 // ---------------- I2C ----------------
 static void init_i2c(void)
@@ -57,12 +49,9 @@ static void init_i2c(void)
 static inline void mcp4725_set_voltage(uint16_t value)
 {
     uint8_t data[2];
-    // MCP4725 "Fast Write" mode: De eerste 4 bits zijn 0, gevolgd door 12 bits data
     data[0] = (value >> 8) & 0x0F;
     data[1] = value & 0xFF;
 
-    // 🔥 FIX: Dit is een veel efficiëntere, moderne ESP-IDF functie!
-    // Hierdoor raakt de processor niet overbelast.
     i2c_master_write_to_device(I2C_MASTER_NUM, MCP4725_ADDR, data, 2, pdMS_TO_TICKS(10));
 }
 
@@ -76,6 +65,7 @@ static void play_wav(const char *filename)
     if (!f)
     {
         ESP_LOGE(TAG, "Kan bestand niet openen: %s", filepath);
+        is_playing = false;
         return;
     }
 
@@ -84,37 +74,50 @@ static void play_wav(const char *filename)
     uint8_t buffer[AUDIO_BUFFER_SIZE];
     size_t bytes_read;
 
-    ESP_LOGI(TAG, "Start afspelen...");
+    ESP_LOGI(TAG, "Start afspelen: %s", filename);
 
     while ((bytes_read = fread(buffer, 1, sizeof(buffer), f)) > 0)
     {
         for (size_t i = 0; i < bytes_read; i++)
         {
+            if (!is_playing) {
+                fclose(f);
+                mcp4725_set_voltage(0);
+                is_playing = false;
+                return;
+            }
             uint16_t sample = buffer[i] << 4;
-
             mcp4725_set_voltage(sample);
-
-            // Busy-wait voor de sample frequentie
             ets_delay_us(SAMPLE_DELAY_US);
-        }
 
-        // 🔥 FIX 1: Geef de watchdog van Core 1 even ademruimte na elk datablok!
-        vTaskDelay(pdMS_TO_TICKS(5));
+            // Yield elke ~200 samples (~9ms) zodat de WDT niet afloopt
+            if ((i & 0xFF) == 0)
+            {
+                taskYIELD();
+            }
+        }
+        // vTaskDelay(pdMS_TO_TICKS(1)); ← dit mag weg, taskYIELD hierboven is voldoende
     }
 
     fclose(f);
     mcp4725_set_voltage(0);
+    is_playing = false;
 
     ESP_LOGI(TAG, "Klaar met afspelen.");
 }
 
+
 // ---------------- TASK ----------------
 static void audio_task(void *pvParameters)
 {
+    char filename[MAX_FILENAME_LEN];
+
     while (1)
     {
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-        play_wav("tetrismusic.wav");
+        if (xQueueReceive(audio_queue, &filename, portMAX_DELAY))
+        {
+            play_wav(filename);
+        }
     }
 }
 
@@ -123,33 +126,43 @@ void init_sound(void)
 {
     ESP_LOGI(TAG, "Init sound...");
 
-    init_spiffs();
     init_i2c();
 
-    // 🔥 FIX 2: Pin de taak vast aan Core 1 in plaats van willekeurig!
-    // Parameter 1 (helemaal achteraan) is de Core ID.
-    xTaskCreatePinnedToCore(audio_task, "audio_task", 8192, NULL, 5, &audio_task_handle, 1);
+    audio_queue = xQueueCreate(1, MAX_FILENAME_LEN);
+
+    xTaskCreatePinnedToCore(audio_task, "audio_task", 8192, NULL, 8, &audio_task_handle, 1);
 }
 
-// ---------------- TRIGGER ----------------
-void trigger_sound(void)
+// ---------------- PLAY FUNCTION ----------------
+void play_sound(const char *filename)
 {
-    if (audio_task_handle != NULL)
+    if (audio_queue == NULL) return;
+
+    if (is_playing)
     {
-        xTaskNotifyGive(audio_task_handle);
+        ESP_LOGI(TAG, "Sound bezig, trigger genegeerd");
+        return;
     }
+
+    is_playing = true;
+
+    char buffer[MAX_FILENAME_LEN];
+    strncpy(buffer, filename, MAX_FILENAME_LEN - 1);
+    buffer[MAX_FILENAME_LEN - 1] = '\0';
+
+    xQueueReset(audio_queue);
+    xQueueSend(audio_queue, &buffer, pdMS_TO_TICKS(100));
 }
 
-// ---------------- ISR ----------------
-void trigger_sound_from_isr(void)
+bool is_sound_playing(void)
 {
-    if (audio_task_handle != NULL)
-    {
-        BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-        vTaskNotifyGiveFromISR(audio_task_handle, &xHigherPriorityTaskWoken);
-        if (xHigherPriorityTaskWoken)
-        {
-            portYIELD_FROM_ISR();
-        }
-    }
+    return is_playing;
+}
+
+// sound.cpp
+void stop_sound(void)
+{
+    if (!is_playing) return;
+    is_playing = false;
+    xQueueReset(audio_queue);
 }

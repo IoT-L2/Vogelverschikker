@@ -18,6 +18,8 @@
 #include <esp_ble_mesh_config_model_api.h>
 #include <esp_ble_mesh_health_model_api.h>
 
+#include "bt_handler.h"
+
 
 #define TAG             "MESH"
 #define CID_ESP         0x02E5
@@ -294,9 +296,6 @@ static void vendor_model_cb(esp_ble_mesh_model_cb_event_t event,
 
     if (opcode != OP_BROADCAST_SET) return;
 
-    if (s_own_unicast_addr != 0 &&
-        param->model_operation.ctx->addr == s_own_unicast_addr) return;
-
     if (param->model_operation.length < sizeof(int32_t)) return;
 
     int32_t value;
@@ -305,7 +304,7 @@ static void vendor_model_cb(esp_ble_mesh_model_cb_event_t event,
     ESP_LOGI(TAG, "[vendor] broadcast received: %" PRId32
              " (from 0x%04x)", value, param->model_operation.ctx->addr);
 
-    /* ---- application logic here ---- */
+    on_bt_received(value);
 }
 
 /* -------- Provisioner callbacks -------- */
@@ -581,6 +580,7 @@ esp_err_t ble_mesh_broadcast_int(int32_t value)
         ESP_LOGE(TAG, "[vendor] broadcast failed (err %d)", err);
     } else {
         ESP_LOGI(TAG, "[vendor] broadcast sent: %" PRId32, value);
+        on_bt_received(value);
     }
     return err;
 }

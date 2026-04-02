@@ -1,102 +1,131 @@
 #include "sleep.h"
-#include <stdio.h>
+#include "sound.h"
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "esp_sleep.h"
+#include "driver/gpio.h"
 
-static const char *TAG = "SleepManager";
+static const char* TAG = "SleepManager";
 
-SleepManager::SleepManager(int darkThreshold) : _dark_threshold(darkThreshold), _adc_handle(NULL)
+SleepManager& SleepManager::getInstance(int darkThreshold, gpio_num_t buttonPin)
 {
+    static SleepManager instance(darkThreshold, buttonPin);
+    return instance;
 }
+
+SleepManager::SleepManager(int darkThreshold, gpio_num_t buttonPin)
+    : _dark_threshold(darkThreshold),
+      _button_pin(buttonPin),
+      _adc_handle(nullptr),
+      _task_handle(nullptr)
+{}
 
 void SleepManager::init()
 {
-    ESP_LOGI(TAG, "Initialiseren van LDR (ADC)...");
+    ESP_LOGI(TAG, "Initialising LDR ADC on channel %d ...", LDR_ADC_CHANNEL);
 
-    // We configureren hier ALLEEN de LDR, de knop is al in main.cpp gedaan!
-    adc_oneshot_unit_init_cfg_t init_config1 = {};
-    init_config1.unit_id = LDR_ADC_UNIT;
-    ESP_ERROR_CHECK(adc_oneshot_new_unit(&init_config1, &_adc_handle));
+    adc_oneshot_unit_init_cfg_t unit_cfg = {};
+    unit_cfg.unit_id = LDR_ADC_UNIT;
+    ESP_ERROR_CHECK(adc_oneshot_new_unit(&unit_cfg, &_adc_handle));
 
-    adc_oneshot_chan_cfg_t adc_config = {};
-    adc_config.bitwidth = ADC_BITWIDTH_DEFAULT;
-    adc_config.atten = ADC_ATTEN_DB_12;
-    ESP_ERROR_CHECK(adc_oneshot_config_channel(_adc_handle, LDR_ADC_CHANNEL, &adc_config));
+    adc_oneshot_chan_cfg_t chan_cfg = {};
+    chan_cfg.bitwidth = ADC_BITWIDTH_DEFAULT;
+    chan_cfg.atten    = ADC_ATTEN_DB_12;
+    ESP_ERROR_CHECK(adc_oneshot_config_channel(_adc_handle, LDR_ADC_CHANNEL, &chan_cfg));
+
+    // Configure wake-up sources ONCE here, not inside the sleep loop.
+    // Timer: wake every 5 sec
+    ESP_ERROR_CHECK(esp_sleep_enable_timer_wakeup(5ULL * 1000000ULL));
+
+    // Button: wake on falling edge
+    if (_button_pin != GPIO_NUM_NC) {
+        ESP_ERROR_CHECK(esp_sleep_enable_gpio_wakeup());
+        ESP_ERROR_CHECK(gpio_wakeup_enable(_button_pin, GPIO_INTR_LOW_LEVEL));
+        ESP_LOGI(TAG, "Button wake-up enabled on GPIO %d", _button_pin);
+    }
+
+    ESP_LOGI(TAG, "SleepManager initialised (dark threshold: %d)", _dark_threshold);
+}
+
+void SleepManager::start()
+{
+    if (_task_handle != nullptr) {
+        ESP_LOGW(TAG, "start() called more than once — ignoring");
+        return;
+    }
+
+    BaseType_t result = xTaskCreate(
+        SleepManager::sleepTaskEntry,
+        "sleep_mgr",
+        4096,
+        this,
+        /* priority */ 3,
+        &_task_handle
+    );
+
+    if (result != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create sleep task!");
+    } else {
+        ESP_LOGI(TAG, "Sleep manager task started");
+    }
+}
+
+void SleepManager::sleepTaskEntry(void* arg)
+{
+    SleepManager* self = static_cast<SleepManager*>(arg);
+    while (true) {
+        self->checkAndSleep();
+        // When it's light, poll every 5 s — cheap and harmless.
+        vTaskDelay(pdMS_TO_TICKS(5000));
+    }
 }
 
 void SleepManager::checkAndSleep()
 {
-    if (_adc_handle == NULL)
-    {
-        ESP_LOGE(TAG, "ADC is niet geïnitialiseerd!");
+    if (_adc_handle == nullptr) {
+        ESP_LOGE(TAG, "ADC not initialised — call init() first!");
         return;
     }
 
     int ldr_val = 0;
     ESP_ERROR_CHECK(adc_oneshot_read(_adc_handle, LDR_ADC_CHANNEL, &ldr_val));
+    ESP_LOGI(TAG, "LDR value: %d (threshold: %d)", ldr_val, _dark_threshold);
 
-    ESP_LOGI(TAG, "LDR Waarde: %d", ldr_val);
+    if (ldr_val >= _dark_threshold) {
+        return; // It's light — nothing to do.
+    }
 
-    // Als het donker is, starten we de slaap-loop
-    if (ldr_val < _dark_threshold)
-    {
-        ESP_LOGW(TAG, "Het is donker! Slaapcyclus gestart...");
+    // ── It's dark: stop sound and enter the light-sleep loop ──────────────────
+    ESP_LOGW(TAG, "Dark detected — entering light-sleep loop");
+    stop_sound();
+    vTaskDelay(pdMS_TO_TICKS(50)); // Let audio turn off
 
-        // Vertel de ESP32 dat hij ook wakker mag worden van een timer (elke 5 seconden)
-        esp_sleep_enable_timer_wakeup(5 * 1000000ULL); // 5.000.000 microseconden = 5 sec
+    while (true) {
+        vTaskDelay(pdMS_TO_TICKS(10)); // Let the UART flush before sleeping
 
-        bool is_donker = true;
+        esp_light_sleep_start(); // sleeping
 
-        // Blijf in deze loop hangen zolang het donker is
-        while (is_donker)
-        {
-            vTaskDelay(pdMS_TO_TICKS(100)); // Geef de seriële monitor tijd om te printen
+        esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
 
-            // Start Light Sleep. De processor pauzeert hier!
-            esp_light_sleep_start();
+        if (cause == ESP_SLEEP_WAKEUP_GPIO) {
+            ESP_LOGI(TAG, "Woken by button (GPIO %d)", _button_pin);
 
-            // --- DE ESP32 ONTWAAKT HIER (door knop óf door 5-sec timer) ---
-            esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
-
-            if (wakeup_reason == ESP_SLEEP_WAKEUP_GPIO)
-            {
-                ESP_LOGI(TAG, "Wakker door KNOP! Geluid wordt afgespeeld...");
-
-                if (wakeup_reason == ESP_SLEEP_WAKEUP_GPIO)
-                {
-                    ESP_LOGI(TAG, "Wakker door KNOP! Geluid wordt afgespeeld...");
-
-                    // We hebben de 'while(gpio_get_level)' verwijderd!
-                    // Het programma blokkeert nu niet meer als je de knop ingedrukt houdt.
-
-                    // Blijf wel nog even wakker zodat de audio-taak de tijd krijgt
-                    // om het geluid af te spelen (anders valt de ESP halverwege het liedje in slaap).
-                    // Pas deze 8000 aan naar de lengte van je geluid.
-                    vTaskDelay(pdMS_TO_TICKS(8000));
+            // Debounce
+            if (_button_pin != GPIO_NUM_NC) {
+                while (gpio_get_level(_button_pin) == 0) {
+                    vTaskDelay(pdMS_TO_TICKS(20));
                 }
             }
-            else if (wakeup_reason == ESP_SLEEP_WAKEUP_TIMER)
-            {
-                // Stille timer wakeup elke 5 seconden. We printen niks om de log schoon te houden.
-            }
+        }
 
-            // Nu we toch wakker zijn (door knop of timer), meten we direct de LDR opnieuw
-            ESP_ERROR_CHECK(adc_oneshot_read(_adc_handle, LDR_ADC_CHANNEL, &ldr_val));
+        // Read LDR after every wake-up
+        ESP_ERROR_CHECK(adc_oneshot_read(_adc_handle, LDR_ADC_CHANNEL, &ldr_val));
 
-            if (ldr_val >= _dark_threshold)
-            {
-                ESP_LOGI(TAG, "Het is weer licht (Waarde: %d)! Ik blijf helemaal wakker.", ldr_val);
-                is_donker = false; // Dit verbreekt de while-loop, we gaan terug naar main.cpp
-            }
-            else
-            {
-                if (wakeup_reason == ESP_SLEEP_WAKEUP_GPIO)
-                {
-                    ESP_LOGI(TAG, "Muziek is klaar, maar het is nog donker. Verder slapen...");
-                }
-            }
+        if (ldr_val >= _dark_threshold) {
+            ESP_LOGI(TAG, "Light restored (LDR: %d) — resuming normal operation", ldr_val);
+            break; //the task loop will re-check in 5 s
         }
     }
 }
