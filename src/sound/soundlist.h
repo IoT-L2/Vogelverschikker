@@ -3,8 +3,7 @@
 
 typedef enum : uint8_t {
     SOUND_TETRIS  = 0,
-    SOUND_DEFAULT = 1,
-    SOUND_ALARM   = 2,
+    SOUND_SOUND = 1,
     SOUND_COUNT
 } SoundIndex;
 

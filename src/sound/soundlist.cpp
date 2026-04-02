@@ -9,8 +9,7 @@ extern SimpleConfig audio_cfg;
 
 static const char* SOUND_LIST[] = {
     "tetrismusic.wav",  // SOUND_TETRIS
-    "default.mp3",      // SOUND_DEFAULT
-    "alarm.wav",        // SOUND_ALARM
+    "sound.wav",      // SOUND_DEFAULT
 };
 
 const char* sound_to_filename(SoundIndex index)
