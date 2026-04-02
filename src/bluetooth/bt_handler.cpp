@@ -24,7 +24,6 @@ void handle_play_sound() {
         strncpy(filename, "default.mp3", sizeof(filename));
     }
     play_sound(filename);
-
 }
 
 void send_data_packet() {
@@ -39,9 +38,7 @@ void send_data_packet() {
     ble_mesh_broadcast_int(ble_data_packet(get_uuid()[7],number, sound_get_current()));
 }
 
-
 void handle_data_recieved(uint8_t node_id, uint16_t total, SoundIndex sound) {
-
     if (!is_provsioner) return;
     uint8_t node_mac = node_id;
     uint16_t total_from_node = total;
