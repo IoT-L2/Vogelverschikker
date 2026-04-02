@@ -6,6 +6,7 @@
 
 #include "esp_log.h"
 #include "main.h"
+#include "network.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
@@ -40,12 +41,8 @@ void send_data_packet() {
 
 void handle_data_recieved(uint8_t node_id, uint16_t total, SoundIndex sound) {
     if (!is_provsioner) return;
-    uint8_t node_mac = node_id;
-    uint16_t total_from_node = total;
-    //TODO: time = get current time
-    SoundIndex sound_from_node = sound;
-    //TODO: send to api
-    ESP_LOGI(TAG, "Received data from node %i , %i , %i", node_id,total_from_node,sound_from_node);
+    ESP_LOGI(TAG, "Received data from node %i , %i , %s", node_id, total, sound_to_filename(sound));
+    network_send_node_data(node_id, total, sound_to_filename(sound));
 }
 extern "C" void on_bt_received(int32_t value)
 {

@@ -8,6 +8,7 @@
 #include "nvs2.h"
 #include "simpelconfig.h"
 #include "spiffs.h"
+#include "network.h"
 
 #define TAG        "MAIN"
 #define BUTTON_PIN GPIO_NUM_41
@@ -23,12 +24,14 @@ extern "C" void app_main()
     nvs2_init();
     spiffs_init();
 
+    // BT mesh first, let it fully settle before WiFi touches the radio
+    init_ble_mesh_config();
+    vTaskDelay(pdMS_TO_TICKS(3000));
 
-
+    // WiFi after mesh is stable
+    network_init();
 
     // Init and start the sleep monitor as an FreeRTOS task.
     SleepManager::getInstance(700, BUTTON_PIN).init();
     SleepManager::getInstance().start();
-
-    init_ble_mesh_config();
 }
