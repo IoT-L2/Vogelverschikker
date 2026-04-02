@@ -10,7 +10,7 @@
 #include "driver/i2c.h"
 #include "esp_log.h"
 #include "rom/ets_sys.h"
-#include "esp_spiffs.h"
+
 
 static const char *TAG = "AUDIO";
 
@@ -29,18 +29,6 @@ static const char *TAG = "AUDIO";
 static TaskHandle_t audio_task_handle = NULL;
 static QueueHandle_t audio_queue = NULL;
 static volatile bool is_playing = false;
-
-// ---------------- SPIFFS ----------------
-static void init_spiffs(void)
-{
-    esp_vfs_spiffs_conf_t conf = {
-        .base_path = "/spiffs",
-        .partition_label = NULL,
-        .max_files = 5,
-        .format_if_mount_failed = true};
-
-    esp_vfs_spiffs_register(&conf);
-}
 
 // ---------------- I2C ----------------
 static void init_i2c(void)
@@ -138,7 +126,6 @@ void init_sound(void)
 {
     ESP_LOGI(TAG, "Init sound...");
 
-    init_spiffs();
     init_i2c();
 
     audio_queue = xQueueCreate(1, MAX_FILENAME_LEN);
